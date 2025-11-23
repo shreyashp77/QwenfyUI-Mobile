@@ -1,0 +1,6 @@
+
+{
+  "name": "QwenfyUI Mobile",
+  "description": "A mobile-friendly frontend for Qwen Image Edit ComfyUI workflow with multi-image support and LoRA control.",
+  "requestFramePermissions": []
+}
