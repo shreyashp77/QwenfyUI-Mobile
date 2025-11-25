@@ -1,5 +1,4 @@
 
-
 export interface ComfyInput {
   [key: string]: string | number | boolean | (string | number)[] | undefined;
 }
@@ -23,6 +22,9 @@ export interface HistoryItem {
   subfolder: string;
   imageType: string;
   
+  // Tracking input for comparison
+  inputFilename?: string; // The filename of the first input image
+  
   // Display data (constructed at runtime)
   imageUrl: string;
   
@@ -37,12 +39,20 @@ export interface LoraConfig {
   strength: number;
 }
 
-export type ThemeColor = 'purple' | 'red' | 'yellow' | 'green' | 'cyan' | 'orange';
+export type ThemeColor = 
+  | 'purple' | 'red' | 'yellow' | 'green' | 'cyan' | 'orange' 
+  | 'blue' | 'pink' | 'indigo' | 'teal' | 'lime' | 'rose' 
+  | 'fuchsia' | 'sky' | 'emerald' | 'violet' | 'amber' | 'slate'
+  | 'custom';
 
 export interface AppSettings {
   serverAddress: string;
   nsfwMode: boolean;
+  enableRemoteInput: boolean;
+  darkMode: boolean;
   theme: ThemeColor;
+  customColor?: string; // Hex code for custom theme
+  randomizeSeed: boolean;
 }
 
 export enum GenerationStatus {
@@ -70,4 +80,11 @@ export interface InputImage {
     file?: File;       // For local uploads
     filename?: string; // For server-side files
     previewUrl: string;
+}
+
+export interface LoraSelection {
+    id: string;
+    name: string;
+    strength: number;
+    enabled: boolean;
 }

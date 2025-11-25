@@ -3,26 +3,26 @@ import { ComfyWorkflow } from "./types";
 export const BASE_WORKFLOW: ComfyWorkflow = {
   "3": {
     "inputs": {
-      "seed": 109793115954832,
+      "seed": 272656912429588,
       "steps": 4,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
-        "75",
+        "102",
         0
       ],
       "positive": [
-        "111",
+        "113",
         0
       ],
       "negative": [
-        "110",
+        "114",
         0
       ],
       "latent_image": [
-        "88",
+        "118",
         0
       ]
     },
@@ -47,16 +47,6 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
       "title": "VAE Decode"
     }
   },
-  "37": {
-    "inputs": {
-      "unet_name": "placeholder_diffusion_fp8.safetensors",
-      "weight_dtype": "default"
-    },
-    "class_type": "UNETLoader",
-    "_meta": {
-      "title": "Load Diffusion Model"
-    }
-  },
   "38": {
     "inputs": {
       "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
@@ -77,7 +67,20 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
       "title": "Load VAE"
     }
   },
-  "60": {
+  "66": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "129",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "79": {
     "inputs": {
       "filename_prefix": "QwenfyUI_",
       "images": [
@@ -90,20 +93,21 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
       "title": "Save Image"
     }
   },
-  "66": {
+  "100": {
     "inputs": {
-      "shift": 3,
-      "model": [
-        "391",
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "image": [
+        "109",
         0
       ]
     },
-    "class_type": "ModelSamplingAuraFlow",
+    "class_type": "ImageScaleToTotalPixels",
     "_meta": {
-      "title": "ModelSamplingAuraFlow"
+      "title": "ImageScaleToTotalPixels"
     }
   },
-  "75": {
+  "102": {
     "inputs": {
       "strength": 1,
       "model": [
@@ -116,81 +120,28 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
       "title": "CFGNorm"
     }
   },
-  "78": {
+  "109": {
     "inputs": {
-      "image": "scaled_975.png"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
       "title": "Load Image"
     }
   },
-  "88": {
-    "inputs": {
-      "pixels": [
-        "93",
-        0
-      ],
-      "vae": [
-        "39",
-        0
-      ]
-    },
-    "class_type": "VAEEncode",
-    "_meta": {
-      "title": "VAE Encode"
-    }
-  },
-  "89": {
-    "inputs": {
-      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
-      "strength_model": 1,
-      "model": [
-        "389",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "LoraLoaderModelOnly"
-    }
-  },
-  "93": {
-    "inputs": {
-      "upscale_method": "lanczos",
-      "megapixels": 1,
-      "image": [
-        "78",
-        0
-      ]
-    },
-    "class_type": "ImageScaleToTotalPixels",
-    "_meta": {
-      "title": "Scale Image to Total Pixels"
-    }
-  },
   "110": {
     "inputs": {
-      "prompt": "",
-      "clip": [
-        "38",
-        0
-      ],
-      "vae": [
-        "39",
-        0
-      ],
-      "image1": [
-        "93",
-        0
-      ]
+      "model_name": "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors",
+      "cpu_offload": "auto",
+      "num_blocks_on_gpu": 1,
+      "use_pin_memory": "disable"
     },
-    "class_type": "TextEncodeQwenImageEditPlus",
+    "class_type": "NunchakuQwenImageDiTLoader",
     "_meta": {
-      "title": "TextEncodeQwenImageEditPlus"
+      "title": "Nunchaku Qwen-Image DiT Loader"
     }
   },
-  "111": {
+  "113": {
     "inputs": {
       "prompt": "placeholder",
       "clip": [
@@ -202,7 +153,7 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
         0
       ],
       "image1": [
-        "93",
+        "100",
         0
       ]
     },
@@ -211,41 +162,80 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
       "title": "TextEncodeQwenImageEditPlus"
     }
   },
-  "389": {
+  "114": {
     "inputs": {
-      "unet_name": "placeholder_model_Q5_1.gguf"
-    },
-    "class_type": "UnetLoaderGGUF",
-    "_meta": {
-      "title": "Unet Loader (GGUF)"
-    }
-  },
-  "390": {
-    "inputs": {
-      "lora_name": "placeholder_detail_lora.safetensors",
-      "strength_model": 0.8,
-      "model": [
-        "89",
+      "prompt": "",
+      "clip": [
+        "38",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "image1": [
+        "100",
         0
       ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus"
+    }
+  },
+  "118": {
+    "inputs": {
+      "width": 720,
+      "height": 1280,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "128": {
+    "inputs": {
+      "lora_name": "placeholder.safetensors",
+      "strength_model": 0.6
     },
     "class_type": "LoraLoaderModelOnly",
     "_meta": {
       "title": "LoraLoaderModelOnly"
     }
   },
-  "391": {
+  "129": {
     "inputs": {
-      "lora_name": "placeholder_style_lora.safetensors",
-      "strength_model": 1,
+      "lora_count": 1,
+      "cpu_offload": "disable",
+      "lora_name_1": "None",
+      "lora_strength_1": 1,
+      "lora_name_2": "None",
+      "lora_strength_2": 1,
+      "lora_name_3": "None",
+      "lora_strength_3": 1,
+      "lora_name_4": "None",
+      "lora_strength_4": 1,
+      "lora_name_5": "None",
+      "lora_strength_5": 1,
+      "lora_name_6": "None",
+      "lora_strength_6": 1,
+      "lora_name_7": "None",
+      "lora_strength_7": 1,
+      "lora_name_8": "None",
+      "lora_strength_8": 1,
+      "lora_name_9": "None",
+      "lora_strength_9": 1,
+      "lora_name_10": "None",
+      "lora_strength_10": 1,
       "model": [
-        "390",
+        "110",
         0
       ]
     },
-    "class_type": "LoraLoaderModelOnly",
+    "class_type": "NunchakuQwenImageLoraStack",
     "_meta": {
-      "title": "LoraLoaderModelOnly"
+      "title": "Nunchaku Qwen Image LoRA Stack"
     }
   }
 };

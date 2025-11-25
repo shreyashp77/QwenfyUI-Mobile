@@ -78,27 +78,14 @@ export const checkServerConnection = async (serverAddress: string): Promise<bool
     }
 }
 
-export const getAvailableModels = async (serverAddress: string): Promise<string[]> => {
+export const getAvailableNunchakuModels = async (serverAddress: string): Promise<string[]> => {
     try {
-        const response = await fetch(`${serverAddress}/object_info/UnetLoaderGGUF`);
+        const response = await fetch(`${serverAddress}/object_info/NunchakuQwenImageDiTLoader`);
         if (!response.ok) return [];
         const data = await response.json();
-        // The structure is data.UnetLoaderGGUF.input.required.unet_name[0] which is the array of strings
-        return data.UnetLoaderGGUF?.input?.required?.unet_name?.[0] || [];
+        return data.NunchakuQwenImageDiTLoader?.input?.required?.model_name?.[0] || [];
     } catch (e) {
-        console.error("Failed to fetch GGUF models", e);
-        return [];
-    }
-}
-
-export const getAvailableDiffusionModels = async (serverAddress: string): Promise<string[]> => {
-    try {
-        const response = await fetch(`${serverAddress}/object_info/UNETLoader`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data.UNETLoader?.input?.required?.unet_name?.[0] || [];
-    } catch (e) {
-        console.error("Failed to fetch Diffusion models", e);
+        console.error("Failed to fetch Nunchaku models", e);
         return [];
     }
 }

@@ -1,8 +1,8 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { HistoryItem, ThemeColor } from '../types';
-import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff } from 'lucide-react';
+import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal } from 'lucide-react';
+import CompareModal from './CompareModal';
 
 interface HistoryGalleryProps {
   history: HistoryItem[];
@@ -10,6 +10,7 @@ interface HistoryGalleryProps {
   onClose: () => void;
   nsfwMode: boolean;
   theme: ThemeColor;
+  serverAddress: string;
 }
 
 // Sub-component to handle individual image loading state
@@ -24,9 +25,9 @@ const HistoryThumbnail: React.FC<{
         return (
             <div 
                 onClick={onClick}
-                className="w-full h-full bg-gray-900 flex flex-col items-center justify-center text-gray-500 cursor-pointer border-b border-gray-800"
+                className="w-full h-full bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 cursor-pointer border-b border-gray-200 dark:border-gray-800"
             >
-                <FileWarning size={32} className="mb-2 opacity-50 text-red-400" />
+                <FileWarning size={32} className="mb-2 opacity-50 text-red-500 dark:text-red-400" />
                 <span className="text-xs font-mono">File Missing</span>
             </div>
         );
@@ -42,11 +43,12 @@ const HistoryThumbnail: React.FC<{
     );
 };
 
-const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onClose, nsfwMode, theme }) => {
+const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onClose, nsfwMode, theme, serverAddress }) => {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [previewRevealed, setPreviewRevealed] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState(false);
+  const [comparingItem, setComparingItem] = useState<HistoryItem | null>(null);
 
   // Swipe refs
   const touchStartX = useRef<number | null>(null);
@@ -114,6 +116,11 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
       });
   };
 
+  const handleCompare = (e: React.MouseEvent, item: HistoryItem) => {
+      e.stopPropagation();
+      setComparingItem(item);
+  };
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -138,16 +145,16 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
 
   return (
     <>
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col">
-            <div className="p-4 flex justify-between items-center border-b border-gray-800 bg-gray-900">
-                <h2 className="text-xl font-bold text-white">Generation History</h2>
-                <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors">
+        <div className="fixed inset-0 z-50 bg-white/95 dark:bg-black/95 backdrop-blur-md flex flex-col transition-colors duration-300">
+            <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Generation History</h2>
+                <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
                     <X size={24} />
                 </button>
             </div>
 
             {history.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 dark:text-gray-500">
                     <p>No images generated yet.</p>
                 </div>
             ) : (
@@ -155,10 +162,10 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                     {history.map((item, index) => (
                         <div 
                             key={item.id} 
-                            className="flex-shrink-0 w-72 md:w-80 bg-gray-800 rounded-xl border border-gray-700 shadow-xl overflow-hidden snap-center flex flex-col"
+                            className="flex-shrink-0 w-72 md:w-80 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden snap-center flex flex-col"
                         >
                             <div 
-                                className="relative cursor-pointer h-72 w-full bg-gray-900 overflow-hidden group"
+                                className="relative cursor-pointer h-72 w-full bg-gray-100 dark:bg-gray-900 overflow-hidden group"
                                 onClick={() => handleOpenPreview(index)}
                             >
                                 <HistoryThumbnail 
@@ -171,18 +178,18 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                                         <EyeOff className="text-white opacity-70" size={32} />
                                     </div>
                                 )}
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-black/20 transition-colors" />
                             </div>
                             
                             <div className="p-4 flex-1 flex flex-col gap-2">
                                 {/* Prompt Section */}
                                 <div className="flex justify-between items-start gap-2">
-                                     <p className="text-xs text-gray-300 line-clamp-2 italic flex-1" title={item.prompt}>
+                                     <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2 italic flex-1" title={item.prompt}>
                                         "{item.prompt}"
                                     </p>
                                     <button 
                                         onClick={() => copyToClipboard(item.prompt, `prompt-${item.id}`)}
-                                        className="text-gray-500 hover:text-white transition-colors"
+                                        className="text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-white transition-colors"
                                         title="Copy Prompt"
                                     >
                                         {copiedId === `prompt-${item.id}` ? <Check size={14} className="text-green-500"/> : <Copy size={14} />}
@@ -190,38 +197,50 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                                 </div>
 
                                 {/* Seed Section */}
-                                <div className="flex justify-between items-center text-xs text-gray-500 pt-2 border-t border-gray-700">
+                                <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-500 pt-2 border-t border-gray-200 dark:border-gray-700">
                                     <div className="flex items-center gap-2">
-                                        <span className="font-mono">Seed: {item.seed}</span>
+                                        <span className="font-mono text-gray-600 dark:text-gray-400">Seed: {item.seed}</span>
                                         <button 
                                             onClick={() => copyToClipboard(item.seed.toString(), `seed-${item.id}`)}
-                                            className="text-gray-500 hover:text-white transition-colors"
+                                            className="text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-white transition-colors"
                                             title="Copy Seed"
                                         >
                                             {copiedId === `seed-${item.id}` ? <Check size={12} className="text-green-500"/> : <Copy size={12} />}
                                         </button>
                                     </div>
                                     {item.duration && (
-                                        <span className="flex items-center gap-1 text-[10px] text-gray-600">
+                                        <span className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-600">
                                             <Clock size={10} /> {(item.duration / 1000).toFixed(1)}s
                                         </span>
                                     )}
                                 </div>
 
+                                {/* Compare Button (if input exists) */}
+                                {item.inputFilename && (
+                                    <div className="pt-1">
+                                        <button 
+                                            onClick={(e) => handleCompare(e, item)}
+                                            className="w-full flex items-center justify-center gap-1.5 bg-gray-100 dark:bg-gray-700/50 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white py-1.5 rounded text-xs transition-colors border border-gray-200 dark:border-gray-600/50"
+                                        >
+                                            <SplitSquareHorizontal size={14} /> Compare
+                                        </button>
+                                    </div>
+                                )}
+
                                 {/* Actions */}
-                                <div className="flex justify-end items-center gap-3 pt-2">
+                                <div className="flex justify-end items-center gap-3 pt-2 mt-auto">
                                     <a 
                                         href={item.imageUrl} 
                                         target="_blank" 
                                         rel="noopener noreferrer" 
-                                        className="text-gray-400 hover:text-white"
+                                        className="text-gray-400 hover:text-gray-700 dark:hover:text-white"
                                         title="Open in new tab"
                                     >
                                         <ExternalLink size={16} />
                                     </a>
                                     <button 
                                         onClick={() => onSelect(item)}
-                                        className={`flex items-center gap-1 text-${theme}-400 hover:text-${theme}-300 font-medium text-xs`}
+                                        className={`flex items-center gap-1 text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 font-medium text-xs`}
                                     >
                                         Use <ArrowUpRight size={16}/>
                                     </button>
@@ -237,19 +256,19 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
 
         {/* Full Screen Preview Modal */}
         {previewIndex !== null && (
-            <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center" onClick={handleClosePreview}>
+            <div className="fixed inset-0 z-[60] bg-white dark:bg-black flex items-center justify-center" onClick={handleClosePreview}>
                 <button 
                     onClick={handleClosePreview} 
-                    className="absolute top-4 right-4 text-white p-2 hover:bg-white/20 rounded-full z-[70] transition-colors"
+                    className="absolute top-4 right-4 text-gray-800 dark:text-white p-2 hover:bg-gray-200 dark:hover:bg-white/20 rounded-full z-[70] transition-colors"
                 >
                     <X size={32} />
                 </button>
                 
-                {/* Navigation Buttons - Visible on all screens */}
+                {/* Navigation Buttons */}
                 {previewIndex > 0 && (
                     <button 
                         onClick={handlePrev}
-                        className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 text-white/80 p-3 hover:bg-white/10 rounded-full z-[70] transition-colors"
+                        className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-[70] transition-colors"
                     >
                         <ChevronLeft size={48} />
                     </button>
@@ -258,7 +277,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                 {previewIndex < history.length - 1 && (
                     <button 
                         onClick={handleNext}
-                        className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 text-white/80 p-3 hover:bg-white/10 rounded-full z-[70] transition-colors"
+                        className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-[70] transition-colors"
                     >
                         <ChevronRight size={48} />
                     </button>
@@ -275,7 +294,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                     onTouchEnd={onTouchEnd}
                 >
                     {previewError ? (
-                        <div className="flex flex-col items-center justify-center text-gray-500 p-8 bg-gray-900 rounded-xl">
+                        <div className="flex flex-col items-center justify-center text-gray-500 p-8 bg-gray-100 dark:bg-gray-900 rounded-xl">
                             <ImageOff size={64} className="mb-4 opacity-50 text-red-500" />
                             <p className="text-xl font-semibold mb-2">Image Not Found</p>
                             <p className="text-sm">The file may have been deleted from the server.</p>
@@ -291,7 +310,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                             
                             {nsfwMode && !previewRevealed && (
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="bg-black/50 p-4 rounded-full text-white/90 backdrop-blur-md flex flex-col items-center animate-pulse">
+                                    <div className="bg-white/80 dark:bg-black/50 p-4 rounded-full text-gray-900 dark:text-white/90 backdrop-blur-md flex flex-col items-center animate-pulse shadow-lg">
                                         <EyeOff size={48} />
                                         <p className="text-sm mt-2 font-medium">Click to reveal</p>
                                     </div>
@@ -311,6 +330,21 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                     )}
                 </div>
             </div>
+        )}
+
+        {/* Comparison Modal */}
+        {comparingItem && comparingItem.inputFilename && (
+            <CompareModal
+                resultImage={comparingItem.imageUrl}
+                inputImage={`${serverAddress}/view?filename=${encodeURIComponent(comparingItem.inputFilename)}&type=input`}
+                onClose={() => setComparingItem(null)}
+                onUseResult={() => {
+                    onSelect(comparingItem);
+                    setComparingItem(null);
+                }}
+                nsfwMode={nsfwMode}
+                theme={theme}
+            />
         )}
     </>
   );

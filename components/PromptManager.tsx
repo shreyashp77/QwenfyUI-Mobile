@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { SavedPrompt, ThemeColor } from '../types';
 import { Save, FolderOpen, Trash2, X, Check, Loader2 } from 'lucide-react';
@@ -91,14 +90,14 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
       <div className="flex gap-2">
         <button 
           onClick={() => { setMode('save'); setShowModal(true); }}
-          className={`p-2 text-gray-400 hover:text-${theme}-400 transition-colors`}
+          className={`p-2 text-gray-400 dark:text-gray-500 hover:text-${theme}-600 dark:hover:text-${theme}-400 transition-colors`}
           title="Save Prompt"
         >
           <Save size={20} />
         </button>
         <button 
           onClick={() => { setMode('list'); setShowModal(true); }}
-          className={`p-2 text-gray-400 hover:text-${theme}-400 transition-colors`}
+          className={`p-2 text-gray-400 dark:text-gray-500 hover:text-${theme}-600 dark:hover:text-${theme}-400 transition-colors`}
           title="Load Prompt"
         >
           <FolderOpen size={20} />
@@ -106,14 +105,14 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-gray-900 w-full max-w-md rounded-xl border border-gray-700 shadow-2xl flex flex-col max-h-[80vh]">
+        <div className="fixed inset-0 z-50 bg-black/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 transition-colors duration-300">
+          <div className="bg-white dark:bg-gray-900 w-full max-w-md rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col max-h-[80vh]">
             
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                 {mode === 'save' ? 'Save Prompt' : 'Saved Prompts'}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setShowModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
                 <X size={20} />
               </button>
             </div>
@@ -126,7 +125,7 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
               )}
 
               {!loading && error && (
-                  <div className="text-red-400 bg-red-900/20 p-3 rounded text-sm text-center">
+                  <div className="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/20 p-3 rounded text-sm text-center">
                       {error}
                   </div>
               )}
@@ -136,17 +135,17 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
                     {mode === 'save' ? (
                         <div className="space-y-4">
                         <div>
-                            <label className="block text-xs text-gray-400 mb-1">Prompt Name</label>
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Prompt Name</label>
                             <input 
                             type="text" 
                             value={newPromptName}
                             onChange={(e) => setNewPromptName(e.target.value)}
                             placeholder="e.g., Red Dress"
-                            className={`w-full bg-gray-800 border border-gray-700 rounded p-2 text-white focus:border-${theme}-500 outline-none`}
+                            className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded p-2 text-gray-900 dark:text-white focus:border-${theme}-500 outline-none`}
                             autoFocus
                             />
                         </div>
-                        <div className="bg-gray-800 p-3 rounded text-sm text-gray-400 italic border border-gray-700 line-clamp-4">
+                        <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-sm text-gray-600 dark:text-gray-400 italic border border-gray-200 dark:border-gray-700 line-clamp-4">
                             {currentPrompt}
                         </div>
                         <button 
@@ -163,20 +162,20 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
                             <div className="text-center text-gray-500 py-8">No saved prompts found on server.</div>
                         ) : (
                             savedPrompts.map(prompt => (
-                            <div key={prompt.id} className="bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-500 group transition-all">
+                            <div key={prompt.id} className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500 group transition-all">
                                 <div className="flex justify-between items-start mb-2">
-                                <span className="font-semibold text-gray-200">{prompt.name}</span>
+                                <span className="font-semibold text-gray-800 dark:text-gray-200">{prompt.name}</span>
                                 <button 
                                     onClick={() => handleDelete(prompt.id)}
-                                    className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
                                     <Trash2 size={16} />
                                 </button>
                                 </div>
-                                <p className="text-xs text-gray-400 line-clamp-2 mb-3">{prompt.text}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-3">{prompt.text}</p>
                                 <button 
                                 onClick={() => handleLoad(prompt.text)}
-                                className="w-full flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 py-1.5 rounded text-xs text-white transition-colors"
+                                className="w-full flex items-center justify-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 py-1.5 rounded text-xs text-gray-800 dark:text-white transition-colors"
                                 >
                                 <Check size={14} /> Load
                                 </button>
@@ -190,20 +189,20 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
             </div>
 
             {mode === 'list' && (
-               <div className="p-3 border-t border-gray-800 bg-gray-900 rounded-b-xl">
+               <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
                   <button 
                     onClick={() => { setMode('save'); setError(null); }} 
-                    className={`text-xs text-${theme}-400 hover:text-${theme}-300 w-full text-center`}
+                    className={`text-xs text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 w-full text-center`}
                   >
                     Switch to Save Mode
                   </button>
                </div>
             )}
             {mode === 'save' && (
-               <div className="p-3 border-t border-gray-800 bg-gray-900 rounded-b-xl">
+               <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
                   <button 
                     onClick={() => { setMode('list'); setError(null); }} 
-                    className={`text-xs text-${theme}-400 hover:text-${theme}-300 w-full text-center`}
+                    className={`text-xs text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 w-full text-center`}
                   >
                     Back to List
                   </button>

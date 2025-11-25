@@ -1,36 +1,42 @@
 # QwenfyUI Mobile
 
-A modern, mobile-first web frontend for ComfyUI, specifically designed for the **Qwen Image Edit** workflow. This application allows you to edit images using text prompts via a clean, responsive interface that works seamlessly on both desktop and mobile devices connected to your local network.
+A modern, feature-rich, mobile-first web frontend for ComfyUI, specifically designed for the **Nunchaku Qwen Image Edit** workflow. This application transforms complex node graphs into a beautiful, responsive interface that works seamlessly on both desktop and mobile devices connected to your local network.
 
-## ✨ Features
+## ✨ Key Features
 
-- **Mobile-Optimized UI**: Touch-friendly controls, swipe gestures for history, auto-keyboard dismissal, and full-screen previews.
-- **Cross-Device Sync**: History and saved prompts are stored on the ComfyUI server, allowing you to start generating on one device and view results on another.
-- **Dynamic Model Loading**: Automatically fetches available GGUF models, Diffusion models, and LoRAs from your ComfyUI installation.
-- **Multi-Image Support**: Upload images from your device or select existing images from the ComfyUI server's input folder.
-- **Advanced Configuration**:
-  - Toggle between Fast (GGUF) and Quality (Diffusion) models.
-  - Adjust LoRA strengths and selections dynamically.
-  - Seed control.
-- **Theme Support**: Choose from 6 different color accents (Purple, Red, Yellow, Green, Cyan, Orange).
-- **Privacy & Control**: 
-  - NSFW blur toggle.
-  - **Stop/Interrupt** generation button.
-  - Option to clear shared history and saved prompts from the server.
+### 🎨 Modern UI & Customization
+- **Mobile-Optimized**: Touch-friendly controls, swipe gestures, and auto-keyboard dismissal.
+- **Dark/Light Mode**: Fully supported theme switching for any lighting condition.
+- **Custom Themes**: Choose from 17 preset accent colors or use the **Color Picker** to match your exact style.
+- **Animations**: Smooth transitions, loading states, and modal reveals.
+
+### 🖼️ Advanced Image Handling
+- **"Before vs After" Slider**: Real-time, interactive comparison slider to visualize changes instantly against the original input.
+- **HEIC/HEIF Support**: Native support for iPhone image formats with automatic client-side conversion (and server-side fallback).
+- **Remote Input**: Browse and select images directly from your ComfyUI server's input folder (Toggleable in Settings).
+- **Resolution Control**: Quickly switch between optimized presets (720x1280, 1080x1920, 1080x2560).
+
+### ⚡ Powerful Generation Tools
+- **Dynamic LoRA Stack**: Add, remove, and configure unlimited LoRAs (up to 10) dynamically without touching the workflow.
+- **Auto-Randomize Seed**: Automatically generates new variations by default (toggleable).
 - **Smart History**:
-  - "Use as Input" workflow.
-  - Copy prompts and seeds.
-  - Persistent storage across sessions.
+  - Cross-device synchronization (generate on PC, view on phone).
+  - "Use as Input" workflow for iterative editing.
+  - Persistent storage of prompts and history on the server.
+- **Resilience**: Built-in polling and race-condition handling ensure you never miss a result, even on shaky mobile connections.
 
 ## 🛠️ Prerequisites
 
-1.  **Node.js**: You need Node.js installed on the computer running the app. [Download Node.js](https://nodejs.org/).
+1.  **Node.js**: Required to run the frontend server. [Download Node.js](https://nodejs.org/).
 2.  **ComfyUI**: A working installation of ComfyUI.
-3.  **ComfyUI Custom Nodes**: Your ComfyUI must have the necessary nodes installed for the Qwen workflow (e.g., `ComfyUI-GGUF`, `ComfyUI-Qwen-Image-Edit`, etc.).
+3.  **Required Custom Nodes**:
+    *   `ComfyUI-nunchaku` (Critical for the specific Qwen workflow used).
+    *   `ComfyUI_Qwen_Image_Edit` (For text encoding).
+    *   `ComfyUI-GGUF` (Optional, depending on your model config).
 
 ## ⚙️ ComfyUI Configuration (Crucial!)
 
-For this web app to communicate with ComfyUI, you must enable Cross-Origin Resource Sharing (CORS).
+To allow this web app to communicate with your ComfyUI server, you **must** enable Cross-Origin Resource Sharing (CORS).
 
 1.  Open your terminal/command prompt.
 2.  Navigate to your ComfyUI folder.
@@ -58,67 +64,47 @@ python main.py --enable-cors-header "*"
     *   **Local PC**: Open `http://localhost:1234`
     *   **Mobile Device**: Look at the terminal output for the **Network** URL (e.g., `http://192.168.1.X:1234`). Enter this IP on your phone's browser.
 
-## 🔧 Changing the Port
-
-If you want to run the app on a different port (default is 1234):
-
-**Method 1: Configuration File (Permanent)**
-1.  Open `vite.config.ts` in a text editor.
-2.  Find the `port: 1234` line and change the number to your desired port.
-3.  Restart the server.
-
-**Method 2: Command Line (Temporary)**
-Run the following command:
-```bash
-npm run dev -- --port 8080
-```
-
 ## 📖 Usage Guide
 
-### 1. Connection
-On first load, the app tries to connect to `http://localhost:8188`. If your ComfyUI is on a different IP or port:
-1.  Click the **Settings (Gear)** icon.
-2.  Enter your ComfyUI Server Address (e.g., `http://192.168.1.5:8188`).
-3.  The Lightning icon in the header will glow your theme color when connected.
+### 1. Connection & Settings
+On first load, the app connects to `http://localhost:8188`.
+*   **Change Server**: Click the **Settings (Gear)** icon to enter your PC's IP address if you are on mobile.
+*   **Theme**: Pick a color or toggle Dark/Light mode.
+*   **Remote Input**: Enable this in settings if you want to browse files stored on the server PC.
 
-### 2. Selecting Inputs
-*   **Images**: Tap the image boxes to upload files. You can upload up to 3 reference images.
-    *   *Tip*: Click the **Folder** icon on an image slot to pick an image already inside your ComfyUI `input` folder.
-*   **Model**: Choose between **GGUF** (Faster, lower VRAM) or **Diffusion** (Higher quality, standard UNET).
-*   **Prompt**: Type your edit instruction. Use the **Save** icon to store frequently used prompts.
+### 2. Inputs & Uploads
+*   **Upload**: Tap the image boxes to upload files (JPG, PNG, HEIC supported).
+*   **Prompt**: Type your edit instruction. Use the **Save** icon to store favorite prompts.
+*   **Resolutions**: Select output size in the "Advanced Configuration" dropdown.
 
-### 3. Generating
-*   Click **Generate**.
-*   The button turns into a progress bar.
-*   To cancel a generation, click the **Stop (Square)** button next to the progress bar.
-*   Once finished, the result appears in a floating card.
-*   Click **Use as Input** to send the result back to the main image slot for further editing.
+### 3. Advanced Configuration
+*   **LoRAs**: Expand the "Advanced Configuration" section. Click "Add LoRA" to stack multiple effects.
+*   **Seed**: Toggle "Auto" (Sparkles icon) to randomize output every time, or turn it off to lock the seed for tweaking.
 
-### 4. History
-*   Click the **Clock** icon to view past generations.
-*   History is shared! Generate on your PC, view on your phone.
-*   You can clear the shared history or saved prompts from the **Settings** menu under "Server Data".
+### 4. Viewing Results
+*   **Comparison**: Click the result image to open full-screen. Drag the slider to see the Before/After difference.
+*   **History**: Click the **Clock** icon. You can also compare history items against their inputs using the "Compare" button on the card.
 
 ## ⚠️ Troubleshooting
 
-**"Not connected to ComfyUI server"**
-*   Ensure ComfyUI is running.
-*   Ensure you started ComfyUI with `--enable-cors-header "*"`.
-*   Check if the IP address in Settings matches your PC's local IP.
+**"HEIC preview conversion failed"**
+The app tries to convert HEIC images in the browser. If this fails, it will still upload the original file. If your ComfyUI server has `pillow-heif` installed, it will work fine.
 
-**"Image not found" / Broken Images**
-*   If you manually deleted images from the ComfyUI `output` folder, the history will show errors.
-*   Use **Settings -> Clear Shared History** to reset the broken list.
+**"Image not found"**
+If you manually delete images from your ComfyUI `output` folder, the history list might still show them. Go to **Settings -> Server Data -> Clear Shared History** to fix this.
 
-**Stuck on "Uploading/Queueing"**
-*   This usually means the WebSocket connection failed. Refresh the page.
+**Result is cropped/zoomed in?**
+The app tries to match the output aspect ratio to your input. Ensure you are using one of the standard resolution presets or that your input image matches the target aspect ratio.
 
 ## 📂 Project Structure
 
-*   `src/App.tsx`: Main application logic.
-*   `src/services/comfyService.ts`: API layer for communicating with ComfyUI.
-*   `src/constants.ts`: Defines the JSON workflow structure sent to the API.
-*   `src/components/`: UI components (History, ImageInput, PromptManager, etc.).
+*   `src/App.tsx`: Main application controller.
+*   `src/services/comfyService.ts`: API layer for ComfyUI interaction.
+*   `src/constants.ts`: The JSON workflow definition (Nunchaku Qwen adaptation).
+*   `src/components/`:
+    *   `CompareModal.tsx`: The before/after slider logic.
+    *   `HistoryGallery.tsx`: History visualization.
+    *   `LoraControl.tsx`: Dynamic LoRA UI.
 
 ## License
 
