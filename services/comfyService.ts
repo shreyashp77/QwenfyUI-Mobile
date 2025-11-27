@@ -1,5 +1,4 @@
 
-
 import { ComfyWorkflow, SavedPrompt, HistoryItem } from "../types";
 
 export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true): Promise<string> => {
@@ -50,6 +49,21 @@ export const interruptGeneration = async (serverAddress: string): Promise<void> 
         });
     } catch (e) {
         console.error("Failed to interrupt generation", e);
+    }
+};
+
+export const freeMemory = async (serverAddress: string): Promise<void> => {
+    try {
+        await fetch(`${serverAddress}/free`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ unload_models: true, free_memory: true })
+        });
+    } catch (e) {
+        console.error("Failed to free memory", e);
+        // Don't throw, as this is an optimization step
     }
 };
 
@@ -176,5 +190,6 @@ export const loadHistoryFromServer = async (serverAddress: string): Promise<Hist
 };
 
 export const clearServerHistory = async (serverAddress: string): Promise<void> => {
+    // Simply clear the JSON history file
     await saveHistoryToServer([], serverAddress);
 };

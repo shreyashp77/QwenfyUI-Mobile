@@ -1,38 +1,53 @@
+
 # QwenfyUI Mobile
 
-A modern, feature-rich, mobile-first web frontend for ComfyUI, specifically designed for the **Nunchaku Qwen Image Edit** workflow. This application transforms complex node graphs into a beautiful, responsive interface that works seamlessly on both desktop and mobile devices connected to your local network.
+A modern, feature-rich, mobile-first web frontend for ComfyUI. This application provides a unified interface for two powerful workflows: **Text-to-Image Generation** (using **Z Image Turbo**) and **Image Editing** (using **Nunchaku Qwen Image Edit**). It transforms complex node graphs into a beautiful, responsive experience optimized for both desktop and mobile devices.
 
 ## ✨ Key Features
 
+### 🚀 Dual Modes
+1.  **Generate Mode (Text-to-Image)**:
+    *   Lightning-fast image creation using **Z Image Turbo**.
+    *   Uses Qwen 3 4B CLIP for superior prompt understanding.
+    *   Simple interface: Positive/Negative prompts and resolution control.
+2.  **Edit Mode (Image-to-Image)**:
+    *   Advanced editing using the Nunchaku Qwen workflow.
+    *   Supports up to 3 input images for complex composition.
+    *   Dynamic LoRA stacking for style control.
+
 ### 🎨 Modern UI & Customization
-- **Mobile-Optimized**: Touch-friendly controls, swipe gestures, and auto-keyboard dismissal.
+- **Mobile-Optimized**: Touch-friendly controls, swipe gestures, auto-keyboard dismissal, and robust clipboard support (even on non-secure LAN connections).
 - **Dark/Light Mode**: Fully supported theme switching for any lighting condition.
 - **Custom Themes**: Choose from 17 preset accent colors or use the **Color Picker** to match your exact style.
 - **Animations**: Smooth transitions, loading states, and modal reveals.
 
 ### 🖼️ Advanced Image Handling
-- **"Before vs After" Slider**: Real-time, interactive comparison slider to visualize changes instantly against the original input.
-- **HEIC/HEIF Support**: Native support for iPhone image formats with automatic client-side conversion (and server-side fallback).
-- **Remote Input**: Browse and select images directly from your ComfyUI server's input folder (Toggleable in Settings).
-- **Resolution Control**: Quickly switch between optimized presets (720x1280, 1080x1920, 1080x2560).
+- **"Before vs After" Slider**: Interactive comparison slider to visualize edit results against the original input (Toggleable in Settings).
+- **HEIC/HEIF Support**: Native support for iPhone image formats with automatic client-side conversion.
+- **Remote Input**: Browse and select images directly from your ComfyUI server's input folder (Easter Egg 😉)
+- **Resolution Control**: Optimized presets (720x1280, 1080x1920, 1080x2560) or **Custom Dimensions** for any aspect ratio.
 
-### ⚡ Powerful Generation Tools
-- **Dynamic LoRA Stack**: Add, remove, and configure unlimited LoRAs (up to 10) dynamically without touching the workflow.
+### ⚡ Smart Workflow Tools
+- **Dynamic LoRA Stack**: Add, remove, and configure unlimited LoRAs (up to 10) in Edit mode without touching the backend graph.
 - **Auto-Randomize Seed**: Automatically generates new variations by default (toggleable).
 - **Smart History**:
-  - Cross-device synchronization (generate on PC, view on phone).
-  - "Use as Input" workflow for iterative editing.
-  - Persistent storage of prompts and history on the server.
-- **Resilience**: Built-in polling and race-condition handling ensure you never miss a result, even on shaky mobile connections.
+  - Cross-device synchronization.
+  - "Use as Input" workflow for iterative generation/editing.
+  - Persistent prompt storage.
+- **Resilience**: Auto-retry mechanisms for OOM (Out Of Memory) errors and connection drops.
 
 ## 🛠️ Prerequisites
 
 1.  **Node.js**: Required to run the frontend server. [Download Node.js](https://nodejs.org/).
 2.  **ComfyUI**: A working installation of ComfyUI.
 3.  **Required Custom Nodes**:
-    *   `ComfyUI-nunchaku` (Critical for the specific Qwen workflow used).
+    *   `ComfyUI-nunchaku` (Critical for Edit workflow).
     *   `ComfyUI_Qwen_Image_Edit` (For text encoding).
-    *   `ComfyUI-GGUF` (Optional, depending on your model config).
+    *   `ComfyUI-GGUF` (Optional).
+4.  **Required Models**:
+    *   **Edit**: `svdq-fp4_r128-qwen-image-edit-2509-lightning...` (or similar Nunchaku model).
+    *   **Generate**: `z_image_turbo_bf16.safetensors` (Z Image Turbo) and `qwen_3_4b.safetensors` (CLIP).
+    *   *Note: Model names can be adjusted in `src/constants.ts` if yours differ.*
 
 ## ⚙️ ComfyUI Configuration (Crucial!)
 
@@ -67,40 +82,37 @@ python main.py --enable-cors-header "*"
 ## 📖 Usage Guide
 
 ### 1. Connection & Settings
-On first load, the app connects to `http://localhost:8188`.
-*   **Change Server**: Click the **Settings (Gear)** icon to enter your PC's IP address if you are on mobile.
+*   **Change Server**: Click the **Settings (Gear)** icon to enter your PC's IP address if accessing from mobile.
 *   **Theme**: Pick a color or toggle Dark/Light mode.
-*   **Remote Input**: Enable this in settings if you want to browse files stored on the server PC.
 
-### 2. Inputs & Uploads
-*   **Upload**: Tap the image boxes to upload files (JPG, PNG, HEIC supported).
-*   **Prompt**: Type your edit instruction. Use the **Save** icon to store favorite prompts.
-*   **Resolutions**: Select output size in the "Advanced Configuration" dropdown.
+### 2. Generate Mode
+*   Select "Generate Image" from the home screen.
+*   Enter a **Positive Prompt** (what you want) and **Negative Prompt** (what to avoid).
+*   Hit "Generate" to create an image using the **Z Image Turbo** workflow.
 
-### 3. Advanced Configuration
-*   **LoRAs**: Expand the "Advanced Configuration" section. Click "Add LoRA" to stack multiple effects.
-*   **Seed**: Toggle "Auto" (Sparkles icon) to randomize output every time, or turn it off to lock the seed for tweaking.
-
-### 4. Viewing Results
-*   **Comparison**: Click the result image to open full-screen. Drag the slider to see the Before/After difference.
-*   **History**: Click the **Clock** icon. You can also compare history items against their inputs using the "Compare" button on the card.
+### 3. Edit Mode
+*   Select "Edit Image".
+*   Upload a source image (or select from server).
+*   (Optional) Add LoRAs via "Advanced Configuration".
+*   Enter instructions and generate.
+*   **Compare**: Click the result to open the Before/After slider.
 
 ## ⚠️ Troubleshooting
 
 **"HEIC preview conversion failed"**
-The app tries to convert HEIC images in the browser. If this fails, it will still upload the original file. If your ComfyUI server has `pillow-heif` installed, it will work fine.
+The app tries to convert HEIC images in the browser. If this fails, it uploads the original file. Ensure `pillow-heif` is installed on your ComfyUI python environment for server-side support.
 
-**"Image not found"**
-If you manually delete images from your ComfyUI `output` folder, the history list might still show them. Go to **Settings -> Server Data -> Clear Shared History** to fix this.
+**"Image not found" / Missing History**
+If you manually delete images from your ComfyUI `output` folder, the app history might get out of sync. Go to **Settings -> Server Data -> Clear Shared History** to fix this.
 
-**Result is cropped/zoomed in?**
-The app tries to match the output aspect ratio to your input. Ensure you are using one of the standard resolution presets or that your input image matches the target aspect ratio.
+**Copy button not working?**
+The app includes a fallback for non-secure contexts (HTTP/LAN). If it still fails, ensure your browser has permissions to access the clipboard.
 
 ## 📂 Project Structure
 
 *   `src/App.tsx`: Main application controller.
 *   `src/services/comfyService.ts`: API layer for ComfyUI interaction.
-*   `src/constants.ts`: The JSON workflow definition (Nunchaku Qwen adaptation).
+*   `src/constants.ts`: Workflow definitions (`BASE_WORKFLOW` for Edit, `GENERATE_WORKFLOW` for Gen).
 *   `src/components/`:
     *   `CompareModal.tsx`: The before/after slider logic.
     *   `HistoryGallery.tsx`: History visualization.

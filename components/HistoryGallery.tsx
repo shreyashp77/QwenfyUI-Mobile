@@ -109,11 +109,37 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
     }
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-      navigator.clipboard.writeText(text).then(() => {
+  const copyToClipboard = async (text: string, id: string) => {
+      try {
+          // Modern API (Requires Secure Context: HTTPS or Localhost)
+          if (navigator.clipboard && window.isSecureContext) {
+              await navigator.clipboard.writeText(text);
+          } else {
+              // Fallback for HTTP/LAN access
+              const textArea = document.createElement("textarea");
+              textArea.value = text;
+              
+              // Make it invisible but part of the DOM to satisfy iOS
+              textArea.style.position = "fixed";
+              textArea.style.left = "-9999px";
+              textArea.style.top = "0";
+              document.body.appendChild(textArea);
+              
+              textArea.focus();
+              textArea.select();
+              textArea.setSelectionRange(0, 99999); // Extra support for mobile
+              
+              const successful = document.execCommand('copy');
+              document.body.removeChild(textArea);
+              
+              if (!successful) throw new Error("Fallback copy failed");
+          }
+          
           setCopiedId(id);
           setTimeout(() => setCopiedId(null), 2000);
-      });
+      } catch (err) {
+          console.error('Failed to copy text: ', err);
+      }
   };
 
   const handleCompare = (e: React.MouseEvent, item: HistoryItem) => {

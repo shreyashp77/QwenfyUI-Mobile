@@ -1,4 +1,5 @@
 
+
 export interface ComfyInput {
   [key: string]: string | number | boolean | (string | number)[] | undefined;
 }
@@ -53,6 +54,7 @@ export interface AppSettings {
   theme: ThemeColor;
   customColor?: string; // Hex code for custom theme
   randomizeSeed: boolean;
+  enableComparison: boolean;
 }
 
 export enum GenerationStatus {

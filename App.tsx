@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, FileType, Check, Plus, Palette, Moon, Sun, Monitor, Smartphone, Sparkles } from 'lucide-react';
-import { BASE_WORKFLOW } from './constants';
+import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, FileType, Check, Plus, Palette, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, SplitSquareHorizontal, ImageOff } from 'lucide-react';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
-import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, clearSavedPrompts } from './services/comfyService';
+import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, clearSavedPrompts, freeMemory } from './services/comfyService';
 import LoraControl from './components/LoraControl';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
@@ -17,6 +17,8 @@ const getHostname = () => window.location.hostname || 'localhost';
 const DEFAULT_SERVER = `http://${getHostname()}:8188`;
 // Using specific model name to prevent KeyError: 'weight' in Nunchaku node if fetch fails
 const DEFAULT_MODEL = "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors";
+
+type ViewMode = 'home' | 'edit' | 'generate';
 
 const THEME_OPTIONS: ThemeColor[] = [
     'purple', 'violet', 'fuchsia', 'pink', 'rose', 'red', 
@@ -90,6 +92,9 @@ const adjustBrightness = (hex: string, percent: number) => {
 
 export default function App() {
   // --- State ---
+  const [view, setView] = useState<ViewMode>('home');
+  const viewRef = useRef<ViewMode>('home'); // Ref to track view for stale closures
+
   const [settings, setSettings] = useState<AppSettings>(() => {
     // Load settings from local storage to persist user preferences across refreshes
     const saved = localStorage.getItem('qwen_settings');
@@ -100,6 +105,7 @@ export default function App() {
         if (parsed.darkMode === undefined) parsed.darkMode = true;
         if (parsed.enableRemoteInput === undefined) parsed.enableRemoteInput = false;
         if (parsed.randomizeSeed === undefined) parsed.randomizeSeed = true;
+        if (parsed.enableComparison === undefined) parsed.enableComparison = false;
         
         // Repair invalid server address from bad local storage state
         if (!parsed.serverAddress || parsed.serverAddress.includes('://:')) {
@@ -118,7 +124,8 @@ export default function App() {
         darkMode: true,
         theme: 'purple',
         customColor: '#ffffff',
-        randomizeSeed: true
+        randomizeSeed: true,
+        enableComparison: false
     };
   });
 
@@ -133,10 +140,13 @@ export default function App() {
 
   // Inputs
   const [prompt, setPrompt] = useState<string>("");
+  const [negativePrompt, setNegativePrompt] = useState<string>("blurry, ugly, bad quality, distortion");
   const [seed, setSeed] = useState<number>(Math.floor(Math.random() * 1000000000000));
   const [selectedResolution, setSelectedResolution] = useState<string>(RESOLUTIONS[0].id);
+  // Use number | string to allow empty state for inputs
+  const [customDimensions, setCustomDimensions] = useState<{width: number | string, height: number | string}>({ width: 720, height: 1280 });
   
-  // Revised Images State
+  // Revised Images State (Only for Edit Mode)
   const [images, setImages] = useState<(InputImage | null)[]>([null, null, null]);
   
   // Server Image Selection
@@ -151,13 +161,19 @@ export default function App() {
   // Execution
   const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
   const [progress, setProgress] = useState(0); // 0-100
+  const [statusMessage, setStatusMessage] = useState<string>(""); // Granular status text
   const [lastGeneratedImage, setLastGeneratedImage] = useState<string | null>(null);
   const [lastGenerationDuration, setLastGenerationDuration] = useState<number>(0);
   const [resultRevealed, setResultRevealed] = useState(false); // For NSFW blur toggle
   const [showResultPreview, setShowResultPreview] = useState(false); // For full screen preview
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState<number>(0); // Incrementor to trigger retry effect
   
+  // Easter Egg State
+  const [lightningClickCount, setLightningClickCount] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   // Refs
   const currentPromptIdRef = useRef<string | null>(null);
   const executingPromptRef = useRef<string>(""); 
@@ -167,8 +183,14 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
+  const retryAttemptedRef = useRef(false);
 
   // --- Effects ---
+
+  // Sync view ref
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   // Apply Dark Mode to HTML root
   useEffect(() => {
@@ -222,6 +244,59 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.serverAddress]);
 
+  // Retry Effect - Handles both OOM and stuck loading
+  useEffect(() => {
+    if (retryTrigger > 0) {
+        const performRetry = async () => {
+            console.log("Processing auto-retry sequence...");
+            setErrorMsg("OOM detected. Unloading models and auto-restarting...");
+            setStatusMessage("Restarting...");
+            
+            try {
+                // Force unload everything
+                await freeMemory(settings.serverAddress);
+                
+                // Wait for ComfyUI to stabilize (unloading takes time)
+                await new Promise(r => setTimeout(r, 4000));
+                
+                setErrorMsg(null);
+                executeGeneration(true);
+            } catch (e) {
+                console.error("Auto-retry sequence failed", e);
+                setErrorMsg("Auto-retry failed. Please try again manually.");
+                setStatus(GenerationStatus.ERROR);
+            }
+        };
+        performRetry();
+    }
+  }, [retryTrigger]);
+
+  // Watchdog for stuck model loads
+  useEffect(() => {
+    let watchdogInterval: ReturnType<typeof setInterval>;
+    
+    if (status === GenerationStatus.EXECUTING && progress === 0) {
+        watchdogInterval = setInterval(async () => {
+            const elapsed = Date.now() - startTimeRef.current;
+            // If stuck at 0% for > 25s and haven't retried yet
+            if (elapsed > 25000 && !retryAttemptedRef.current) {
+                console.log("Detected stuck model load. Triggering retry...");
+                retryAttemptedRef.current = true;
+                
+                try {
+                    await interruptGeneration(settings.serverAddress);
+                    // Trigger the retry effect
+                    setRetryTrigger(prev => prev + 1);
+                } catch (e) {
+                   //
+                }
+            }
+        }, 1000);
+    }
+    
+    return () => clearInterval(watchdogInterval);
+  }, [status, progress, settings.serverAddress]);
+
   // Polling fallback for flaky WS or missed messages
   useEffect(() => {
       let interval: ReturnType<typeof setInterval>;
@@ -233,6 +308,7 @@ export default function App() {
                       if (historyData && historyData[currentPromptIdRef.current]) {
                           console.log("Detected completion via polling");
                           setStatus(GenerationStatus.FINISHED);
+                          setStatusMessage("Finished");
                           setProgress(100);
                           fetchGenerationResult(currentPromptIdRef.current);
                       }
@@ -300,20 +376,44 @@ export default function App() {
                 const msg = JSON.parse(event.data);
                 const activePromptId = currentPromptIdRef.current;
                 
+                // Only process messages for the current prompt to avoid noise
+                if (msg.data && msg.data.prompt_id && activePromptId && msg.data.prompt_id !== activePromptId) {
+                    return;
+                }
+                
                 if (msg.type === 'execution_start') {
                     if (msg.data.prompt_id === activePromptId) {
                         setStatus(GenerationStatus.EXECUTING);
+                        setStatusMessage("Loading Model...");
                         setProgress(0);
                     }
                 } else if (msg.type === 'executing') {
-                     if (msg.data.node === null && msg.data.prompt_id === activePromptId) {
+                     // Node execution started
+                     const nodeId = msg.data.node;
+                     
+                     if (nodeId === null) {
+                         // Execution finished (handled by execution_success usually)
                      } else if (activePromptId) {
-                         setProgress(prev => (prev < 90 ? prev + 5 : 90));
+                         // Check for specific nodes to update status text
+                         // KSampler ID is "3" in both workflows
+                         if (nodeId === "3") {
+                             setStatusMessage("Generating...");
+                         } 
+                         // SaveImage ID is "9" (Generate) or "79" (Edit)
+                         else if (nodeId === "9" || nodeId === "79") {
+                             setStatusMessage("Saving...");
+                             setProgress(99);
+                         }
+                         // We DO NOT blindly increment progress here anymore to avoid fluctuation.
+                         // Progress is strictly controlled by 'progress' events or specific node milestones.
                      }
                 } else if (msg.type === 'progress') {
                     if (msg.data.prompt_id === activePromptId) {
                         const { value, max } = msg.data;
-                        setProgress(Math.round((value / max) * 100));
+                        const percentage = Math.floor((value / max) * 100);
+                        setProgress(percentage);
+                        // Ensure status says generating when actual progress events come in
+                        setStatusMessage("Generating...");
                     }
                 } else if (msg.type === 'execution_success') {
                     // Buffer the success message in case prompt ID isn't set yet (race condition)
@@ -322,12 +422,26 @@ export default function App() {
                     if (msg.data.prompt_id === activePromptId) {
                         setProgress(100);
                         setStatus(GenerationStatus.FINISHED);
+                        setStatusMessage("Finished");
                         fetchGenerationResult(msg.data.prompt_id);
                     }
                 } else if (msg.type === 'execution_error') {
                     if (msg.data.prompt_id === activePromptId) {
-                        setStatus(GenerationStatus.ERROR);
-                        setErrorMsg(msg.data.exception_message || "Execution error on server");
+                        // Check for OOM errors
+                        const errorMsgStr = JSON.stringify(msg.data);
+                        const isOOM = errorMsgStr.includes("OutOfMemory") || 
+                                      errorMsgStr.includes("Allocation on device") || 
+                                      errorMsgStr.includes("CUDA out of memory");
+                        
+                        if (isOOM && !retryAttemptedRef.current) {
+                             console.log("OOM Error Detected via WS. Triggering retry...");
+                             retryAttemptedRef.current = true;
+                             setRetryTrigger(prev => prev + 1);
+                        } else {
+                            setStatus(GenerationStatus.ERROR);
+                            setStatusMessage("Error");
+                            setErrorMsg(msg.data.exception_message || "Execution error on server");
+                        }
                     }
                 }
             } catch (e) {
@@ -345,6 +459,20 @@ export default function App() {
   const handleToggleThemeMode = () => {
       setSettings({...settings, darkMode: !settings.darkMode});
   }
+
+  const handleLightningClick = () => {
+    setLightningClickCount(prev => {
+        const newCount = prev + 1;
+        if (newCount >= 7) {
+            const newVal = !settings.enableRemoteInput;
+            setSettings(s => ({ ...s, enableRemoteInput: newVal }));
+            setToastMessage(newVal ? "Remote Input Enabled 🔓" : "Remote Input Disabled 🔒");
+            setTimeout(() => setToastMessage(null), 3000);
+            return 0;
+        }
+        return newCount;
+    });
+  };
 
   const handleFileSelect = async (index: number, file: File | null) => {
     if (file) {
@@ -373,11 +501,7 @@ export default function App() {
                 );
             } catch (e: any) {
                 console.error("HEIC conversion error", e);
-                // IMPORTANT: Do not return here. If client-side conversion fails, 
-                // we warn the user but allow them to upload the original file.
-                // ComfyUI might support it if they have the right libraries installed on the server.
                 setErrorMsg(`HEIC preview conversion failed: ${e.message}. Attempting to use original file.`);
-                // processedFile remains the original 'file'
             }
         }
 
@@ -421,12 +545,10 @@ export default function App() {
       if (!img || img.type !== 'file' || !img.file) return;
 
       setStatus(GenerationStatus.UPLOADING);
+      setStatusMessage("Uploading Image...");
       try {
-          // Use overwrite=false so if file exists, it might be renamed by Comfy, preserving history
-          // Comfy returns the actual filename saved
           const filename = await uploadImage(img.file, settings.serverAddress, false);
           
-          // Update the state to point to the server file
           const newImages = [...images];
           newImages[index] = {
               type: 'server',
@@ -435,15 +557,16 @@ export default function App() {
           };
           setImages(newImages);
 
-          // Refresh the available server images list so it's ready for other inputs
           const serverImgs = await getServerInputImages(settings.serverAddress);
           setAvailableServerImages(serverImgs);
           
           setStatus(GenerationStatus.IDLE);
+          setStatusMessage("");
       } catch (e) {
           console.error("Upload failed", e);
           setErrorMsg("Failed to upload image to server.");
           setStatus(GenerationStatus.IDLE);
+          setStatusMessage("");
       }
   };
 
@@ -456,6 +579,10 @@ export default function App() {
   const randomizeSeed = () => setSeed(Math.floor(Math.random() * 1000000000000));
 
   const handleHistorySelect = async (item: HistoryItem) => {
+      // Switch to the mode that created this item, if we can infer it, or stay in edit
+      // For now, if we use as input, we likely want to Edit it.
+      if (view !== 'edit') setView('edit');
+
       try {
           const res = await fetch(item.imageUrl);
           if (!res.ok) {
@@ -475,7 +602,6 @@ export default function App() {
 
   const handleToggleHistory = async () => {
       if (!showHistory) {
-          // When opening history, reload from server to see cross-device updates
           await loadHistory();
       }
       setShowHistory(!showHistory);
@@ -488,7 +614,17 @@ export default function App() {
         if (!response.ok) throw new Error("File missing");
         const blob = await response.blob();
         const file = new File([blob], `generated_${Date.now()}.png`, { type: "image/png" });
+        
+        // Free memory on server to prevent OOM when switching models
+        await freeMemory(settings.serverAddress);
+        
+        // Add a small delay to ensure backend cleans up fully
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Auto-switch to edit mode to refine the result
+        setView('edit');
         handleFileSelect(0, file);
+        
         setShowResultPreview(false);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -515,15 +651,18 @@ export default function App() {
       await interruptGeneration(settings.serverAddress);
       setStatus(GenerationStatus.IDLE);
       setProgress(0);
+      setStatusMessage("Stopped");
       setErrorMsg("Generation stopped by user.");
   }
 
   const handleClearServerHistory = async () => {
-      if(confirm("Are you sure you want to clear the shared history from the server? This will remove the history list for all devices.")) {
+      if(confirm("Are you sure you want to clear the shared history?")) {
           try {
               await clearServerHistory(settings.serverAddress);
               setHistory([]);
               setShowHistory(false);
+              setToastMessage("Shared history cleared 🧹");
+              setTimeout(() => setToastMessage(null), 3000);
           } catch(e) {
               console.error(e);
               setErrorMsg("Failed to clear server history");
@@ -535,8 +674,6 @@ export default function App() {
       if(confirm("Are you sure you want to clear ALL saved prompts from the server? This cannot be undone.")) {
           try {
               await clearSavedPrompts(settings.serverAddress);
-              // We don't need to update UI state here as PromptManager reloads on open, 
-              // but we could trigger a refresh if we wanted to be perfect.
               alert("All saved prompts have been cleared.");
           } catch(e) {
               console.error(e);
@@ -569,148 +706,179 @@ export default function App() {
   };
 
   // Guard against outdated constants.ts file
-  const validateWorkflow = (workflow: any) => {
-      // Check key nodes for new workflow structure
-      const requiredNodes = ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"];
+  const validateWorkflow = (workflow: any, requiredNodes: string[]) => {
       for (const id of requiredNodes) {
           if (!workflow[id]) return id;
       }
       return null;
   };
 
-  const handleGenerate = async () => {
+  const handleGenerateClick = () => {
+    retryAttemptedRef.current = false;
+    executeGeneration(false);
+  }
+
+  const executeGeneration = async (isRetry: boolean) => {
     // Dismiss keyboard on mobile
     if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
     }
 
-    if (!images[0]) {
-        setErrorMsg("Please select at least the first image.");
-        return;
-    }
     if (!isConnected) {
         setErrorMsg("Not connected to ComfyUI server.");
         return;
     }
 
-    // Safety check for stale workflow constants
-    if (!BASE_WORKFLOW["129"]) {
-        setErrorMsg("Configuration Error: constants.ts file is outdated (Missing Node 129). Please regenerate the project.");
-        return;
-    }
-
-    // Auto Randomize Seed Logic
+    // Determine Seed and Prompt based on retry status
     let currentSeed = seed;
-    if (settings.randomizeSeed) {
-        currentSeed = Math.floor(Math.random() * 1000000000000);
-        setSeed(currentSeed);
+    let currentPrompt = prompt;
+
+    if (isRetry) {
+        // Use stored refs for retry
+        currentSeed = executingSeedRef.current;
+        currentPrompt = executingPromptRef.current;
+    } else {
+        // New generation
+        if (settings.randomizeSeed) {
+            currentSeed = Math.floor(Math.random() * 1000000000000);
+            setSeed(currentSeed);
+        }
+        currentPrompt = prompt;
     }
 
-    executingPromptRef.current = prompt;
-    executingSeedRef.current = currentSeed; // Use the (potentially new) seed
+    // Update refs for tracking
+    executingPromptRef.current = currentPrompt;
+    executingSeedRef.current = currentSeed;
     startTimeRef.current = Date.now();
-    // Reset input tracking
     executingInputFilenameRef.current = undefined;
 
-    setErrorMsg(null);
+    if (!isRetry) setErrorMsg(null);
     setStatus(GenerationStatus.UPLOADING);
+    setStatusMessage("Uploading Images...");
     setProgress(0);
     setLastGeneratedImage(null);
     setResultRevealed(false); 
 
     try {
-        // 2. Process Images (Upload files, keep server filenames)
-        const finalFilenames: (string | null)[] = [null, null, null];
+        let workflow: any;
+
+        // Resolution Logic
+        let width = 720;
+        let height = 1280;
         
-        for (let i = 0; i < 3; i++) {
-            const img = images[i];
-            if (img) {
-                if (img.type === 'file' && img.file) {
-                    // For generation, we overwrite to ensure the file used matches the exact content
-                    finalFilenames[i] = await uploadImage(img.file, settings.serverAddress, true);
-                } else if (img.type === 'server' && img.filename) {
-                    finalFilenames[i] = img.filename;
+        if (selectedResolution === 'custom') {
+            width = Number(customDimensions.width);
+            height = Number(customDimensions.height);
+            // Fallback if empty or invalid
+            if (!width || width <= 0) width = 720;
+            if (!height || height <= 0) height = 1280;
+        } else {
+            const resConfig = RESOLUTIONS.find(r => r.id === selectedResolution);
+            if (resConfig) {
+                width = resConfig.width;
+                height = resConfig.height;
+            }
+        }
+
+        if (view === 'edit') {
+            // --- EDIT MODE LOGIC ---
+            if (!images[0]) {
+                setErrorMsg("Please select at least the first image.");
+                setStatus(GenerationStatus.IDLE);
+                setStatusMessage("");
+                return;
+            }
+
+            // Safety check for Edit workflow
+            if (!BASE_WORKFLOW["129"]) {
+                setErrorMsg("Configuration Error: constants.ts file is outdated (Missing Node 129).");
+                setStatus(GenerationStatus.IDLE);
+                setStatusMessage("");
+                return;
+            }
+
+            // Upload Images
+            const finalFilenames: (string | null)[] = [null, null, null];
+            for (let i = 0; i < 3; i++) {
+                const img = images[i];
+                if (img) {
+                    if (img.type === 'file' && img.file) {
+                        finalFilenames[i] = await uploadImage(img.file, settings.serverAddress, true);
+                    } else if (img.type === 'server' && img.filename) {
+                        finalFilenames[i] = img.filename;
+                    }
                 }
             }
-        }
 
-        // Store the main input filename for history tracking
-        if (finalFilenames[0]) {
-            executingInputFilenameRef.current = finalFilenames[0];
-        }
-
-        // 3. Prepare Workflow
-        setStatus(GenerationStatus.QUEUED);
-        const workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW)); 
-
-        // Additional Runtime Validation
-        const missingNode = validateWorkflow(workflow);
-        if (missingNode) {
-            throw new Error(`Invalid Workflow Configuration: Missing node ${missingNode}. constants.ts file may be corrupted.`);
-        }
-
-        workflow["3"].inputs.seed = currentSeed; // Apply correct seed
-        workflow["113"].inputs.prompt = prompt; 
-        workflow["110"].inputs.model_name = selectedModel;
-
-        // Apply Resolution Settings
-        const resConfig = RESOLUTIONS.find(r => r.id === selectedResolution) || RESOLUTIONS[0];
-        workflow["118"].inputs.width = resConfig.width;
-        workflow["118"].inputs.height = resConfig.height;
-        
-        // Adjust scale for input to match quality: Calculate target megapixels
-        // (Width * Height) / 1,000,000 -> Round to 1 decimal
-        const mpx = Math.round((resConfig.width * resConfig.height) / 100000) / 10; 
-        workflow["100"].inputs.megapixels = Math.max(1, mpx);
-
-        // Set Images
-        if (finalFilenames[0]) {
-            workflow["109"].inputs.image = finalFilenames[0];
-        }
-
-        const addImageChain = (imgIndex: number, filename: string) => {
-             const loadId = (1000 + imgIndex).toString();
-             // Clone LoadImage node
-             workflow[loadId] = JSON.parse(JSON.stringify(workflow["109"]));
-             workflow[loadId].inputs.image = filename;
-             
-             // Inject into prompts
-             workflow["113"].inputs[`image${imgIndex}`] = [loadId, 0]; 
-             workflow["114"].inputs[`image${imgIndex}`] = [loadId, 0];
-        };
-
-        // IMPORTANT: BYPASS SCALER NODE (Node 100) for MAIN image to match output resolution exactly
-        workflow["113"].inputs.image1 = ["109", 0];
-        workflow["114"].inputs.image1 = ["109", 0];
-
-        if (finalFilenames[1]) {
-            addImageChain(2, finalFilenames[1]!);
-        }
-        if (finalFilenames[2]) {
-            addImageChain(3, finalFilenames[2]!);
-        }
-
-        // Configure LoRA Stack (Node 129)
-        // NunchakuQwenImageLoraStack takes inputs: lora_count, lora_name_1...10, lora_strength_1...10
-        const activeLoras = loras.filter(l => l.enabled);
-
-        workflow["129"].inputs.lora_count = activeLoras.length;
-        
-        // Reset all slots to "None" first to be safe (though constant file has defaults)
-        for(let i=1; i<=10; i++) {
-             workflow["129"].inputs[`lora_name_${i}`] = "None";
-             workflow["129"].inputs[`lora_strength_${i}`] = 1.0;
-        }
-
-        // Fill active slots
-        activeLoras.forEach((lora, index) => {
-            const slot = index + 1;
-            // Ensure we don't overflow the node's capacity (max 10)
-            if (slot <= 10) {
-                workflow["129"].inputs[`lora_name_${slot}`] = lora.name;
-                workflow["129"].inputs[`lora_strength_${slot}`] = lora.strength;
+            if (finalFilenames[0]) {
+                executingInputFilenameRef.current = finalFilenames[0];
             }
-        });
+
+            setStatus(GenerationStatus.QUEUED);
+            setStatusMessage("Queued...");
+            workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW)); 
+            const missingNode = validateWorkflow(workflow, ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"]);
+            if (missingNode) throw new Error(`Invalid Edit Workflow: Missing node ${missingNode}.`);
+
+            workflow["3"].inputs.seed = currentSeed;
+            workflow["113"].inputs.prompt = currentPrompt; 
+            workflow["110"].inputs.model_name = selectedModel;
+
+            workflow["118"].inputs.width = width;
+            workflow["118"].inputs.height = height;
+            const mpx = Math.round((width * height) / 100000) / 10; 
+            workflow["100"].inputs.megapixels = Math.max(1, mpx);
+
+            if (finalFilenames[0]) workflow["109"].inputs.image = finalFilenames[0];
+
+            const addImageChain = (imgIndex: number, filename: string) => {
+                const loadId = (1000 + imgIndex).toString();
+                workflow[loadId] = JSON.parse(JSON.stringify(workflow["109"]));
+                workflow[loadId].inputs.image = filename;
+                workflow["113"].inputs[`image${imgIndex}`] = [loadId, 0]; 
+                workflow["114"].inputs[`image${imgIndex}`] = [loadId, 0];
+            };
+
+            workflow["113"].inputs.image1 = ["109", 0];
+            workflow["114"].inputs.image1 = ["109", 0];
+
+            if (finalFilenames[1]) addImageChain(2, finalFilenames[1]!);
+            if (finalFilenames[2]) addImageChain(3, finalFilenames[2]!);
+
+            // LoRA Stack
+            const activeLoras = loras.filter(l => l.enabled);
+            workflow["129"].inputs.lora_count = activeLoras.length;
+            for(let i=1; i<=10; i++) {
+                workflow["129"].inputs[`lora_name_${i}`] = "None";
+                workflow["129"].inputs[`lora_strength_${i}`] = 1.0;
+            }
+            activeLoras.forEach((lora, index) => {
+                const slot = index + 1;
+                if (slot <= 10) {
+                    workflow["129"].inputs[`lora_name_${slot}`] = lora.name;
+                    workflow["129"].inputs[`lora_strength_${slot}`] = lora.strength;
+                }
+            });
+
+        } else if (view === 'generate') {
+            // --- GENERATE MODE LOGIC ---
+            setStatus(GenerationStatus.QUEUED);
+            setStatusMessage("Queued...");
+            workflow = JSON.parse(JSON.stringify(GENERATE_WORKFLOW));
+            
+            const missingNode = validateWorkflow(workflow, ["3", "6", "7", "8", "9", "13", "16", "17", "18"]);
+            if (missingNode) throw new Error(`Invalid Generate Workflow: Missing node ${missingNode}.`);
+
+            workflow["3"].inputs.seed = currentSeed;
+            workflow["6"].inputs.text = currentPrompt;
+            workflow["7"].inputs.text = negativePrompt;
+
+            workflow["13"].inputs.width = width;
+            workflow["13"].inputs.height = height;
+            
+            // Note: Generate workflow currently has hardcoded Model/CLIP/VAE in constants.ts
+            // We can expose these later if needed, but for now we follow the user's JSON.
+        }
 
         // 4. Queue
         const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
@@ -718,36 +886,37 @@ export default function App() {
 
         // Check if we ALREADY received the success message (race condition fix)
         if (pendingSuccessIds.current.has(promptId)) {
-            console.log("Instant execution detected via buffer");
             setStatus(GenerationStatus.FINISHED);
+            setStatusMessage("Finished");
             setProgress(100);
             fetchGenerationResult(promptId);
             pendingSuccessIds.current.delete(promptId);
             return;
         }
 
-        // Check history immediately in case it was cached and finished instantly
+        // Check history immediately in case it was cached
         try {
             const historyData = await getHistory(promptId, settings.serverAddress);
             if (historyData && historyData[promptId]) {
-                console.log("Instant execution detected via history query");
                 setStatus(GenerationStatus.FINISHED);
+                setStatusMessage("Finished");
                 setProgress(100);
                 fetchGenerationResult(promptId);
             }
         } catch (e) {
-            // History not ready yet, this is normal for running jobs
+            // History not ready yet
         }
         
     } catch (err: any) {
         console.error(err);
         setStatus(GenerationStatus.ERROR);
+        setStatusMessage("Error");
         setErrorMsg(err.message || "Unknown error occurred");
     }
   };
 
   const fetchGenerationResult = async (promptId: string) => {
-      if (status === GenerationStatus.FINISHED && lastGeneratedImage) return; // Prevent double fetch
+      if (status === GenerationStatus.FINISHED && lastGeneratedImage) return;
 
       try {
           await new Promise(resolve => setTimeout(resolve, 300));
@@ -757,10 +926,22 @@ export default function App() {
           if (!promptHistory) throw new Error("History not found for prompt ID");
 
           const outputs = promptHistory.outputs;
-          if (outputs && outputs["79"] && outputs["79"].images && outputs["79"].images.length > 0) {
-              const imgInfo = outputs["79"].images[0]; // { filename, subfolder, type }
+          
+          // Determine output node based on viewRef to avoid stale closures in WebSocket callback
+          let outputNodeId = viewRef.current === 'generate' ? "9" : "79";
+          
+          // Robust fallback: If the expected node ID has no images, search for ANY node with images.
+          // This handles cases where node IDs shift or where the view state might still be mismatched.
+          if (!outputs[outputNodeId] || !outputs[outputNodeId].images || outputs[outputNodeId].images.length === 0) {
+              const foundNodeId = Object.keys(outputs).find(key => outputs[key].images && outputs[key].images.length > 0);
+              if (foundNodeId) {
+                  outputNodeId = foundNodeId;
+              }
+          }
+          
+          if (outputs && outputs[outputNodeId] && outputs[outputNodeId].images && outputs[outputNodeId].images.length > 0) {
+              const imgInfo = outputs[outputNodeId].images[0];
               
-              // Construct URL instead of Blob for persistence
               const imageUrl = `${settings.serverAddress}/view?filename=${encodeURIComponent(imgInfo.filename)}&type=${imgInfo.type}&subfolder=${encodeURIComponent(imgInfo.subfolder || '')}&t=${Date.now()}`;
               
               const duration = Date.now() - startTimeRef.current;
@@ -773,24 +954,18 @@ export default function App() {
                   filename: imgInfo.filename,
                   subfolder: imgInfo.subfolder || '',
                   imageType: imgInfo.type,
-                  inputFilename: executingInputFilenameRef.current, // Persist the input used for this result
-                  imageUrl: imageUrl, // Transient URL for current session display
+                  inputFilename: executingInputFilenameRef.current,
+                  imageUrl: imageUrl, 
                   prompt: executingPromptRef.current, 
                   seed: executingSeedRef.current, 
                   timestamp: Date.now(),
                   duration: duration
               };
               
-              // Save to Server using Read-Modify-Write to avoid concurrency issues
-              // 1. Load latest from server
               const currentServerHistory = await loadHistoryFromServer(settings.serverAddress);
-              // 2. Append new item
               const updatedHistory = [newItem, ...currentServerHistory];
-              // 3. Save back
               await saveHistoryToServer(updatedHistory, settings.serverAddress);
               
-              // 4. Update local state
-               // Reconstruct URLs for display
               const displayHistory = updatedHistory.map(item => ({
                   ...item,
                   imageUrl: `${settings.serverAddress}/view?filename=${encodeURIComponent(item.filename)}&type=${item.imageType}&subfolder=${encodeURIComponent(item.subfolder || '')}&t=${item.timestamp}`
@@ -806,36 +981,68 @@ export default function App() {
       }
   };
 
+  // Helper to determine the input preview URL correctly handling blob URLs
+  const getComparisonInputUrl = () => {
+      if (!settings.enableComparison || view !== 'edit' || !images[0]?.previewUrl) return '';
+      
+      const url = images[0].previewUrl;
+      // If it's a blob URL, don't append query params as it invalidates the blob reference
+      if (url.startsWith('blob:')) return url;
+      
+      return `${url}&t=${Date.now()}`;
+  };
+
   return (
     <div className={`max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 relative shadow-2xl overflow-x-hidden ${lastGeneratedImage && !showResultPreview ? 'pb-96' : 'pb-24'} transition-colors duration-300`}>
       
+      {/* Toast Notification */}
+      {toastMessage && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-full text-sm font-medium z-[100] animate-fade-in backdrop-blur-md shadow-lg border border-white/10">
+              {toastMessage}
+          </div>
+      )}
+
       {/* Header */}
       <header className={`p-4 bg-white dark:bg-gray-900 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300`}>
         <div className="flex items-center gap-2">
+            {view !== 'home' && (
+                <button 
+                    onClick={() => {
+                        setView('home');
+                        setLastGeneratedImage(null);
+                    }} 
+                    className="mr-1 p-1 -ml-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+                >
+                    <ArrowLeft size={20} />
+                </button>
+            )}
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-700 to-gray-900 dark:from-gray-100 dark:to-gray-400">
                 QwenfyUI
             </h1>
-            <Zap 
-                size={18} 
-                fill="currentColor"
-                className={`transition-all duration-500 ${isConnected ? `text-${settings.theme}-500` : 'text-red-500'}`} 
-                style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
-            />
+            <div onClick={handleLightningClick} className="cursor-pointer">
+                <Zap 
+                    size={18} 
+                    fill="currentColor"
+                    className={`transition-all duration-500 ${isConnected ? `text-${settings.theme}-500` : 'text-red-500'}`} 
+                    style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
+                />
+            </div>
         </div>
         <div className="flex gap-2">
             <button
                 onClick={handleToggleThemeMode}
                 className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400`}
-                title={settings.darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
                 {settings.darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button 
-                onClick={handleToggleHistory}
-                className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showHistory ? `text-${settings.theme}-600 dark:text-${settings.theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
-            >
-                <HistoryIcon size={20} />
-            </button>
+            {view !== 'home' && (
+                <button 
+                    onClick={handleToggleHistory}
+                    className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showHistory ? `text-${settings.theme}-600 dark:text-${settings.theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
+                >
+                    <HistoryIcon size={20} />
+                </button>
+            )}
             <button 
                 onClick={() => setShowSettings(!showSettings)}
                 className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showSettings ? `text-${settings.theme}-600 dark:text-${settings.theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
@@ -908,17 +1115,17 @@ export default function App() {
                     </button>
                 </div>
 
-                {/* Remote Input Toggle */}
+                {/* Comparison Slider Toggle */}
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
                     <div className="flex flex-col">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Remote Input</span>
-                        <span className="text-[10px] text-gray-500">Allow selecting files from server folder</span>
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Comparison Slider</span>
+                        <span className="text-[10px] text-gray-500">Show Before/After slider for edits</span>
                     </div>
                     <button 
-                        onClick={() => setSettings({...settings, enableRemoteInput: !settings.enableRemoteInput})}
-                        className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableRemoteInput ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                        onClick={() => setSettings({...settings, enableComparison: !settings.enableComparison})}
+                        className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableComparison ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
                     >
-                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableRemoteInput ? 'translate-x-6' : ''}`} />
+                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableComparison ? 'translate-x-6' : ''}`} />
                     </button>
                 </div>
                 
@@ -938,182 +1145,281 @@ export default function App() {
                             <FileType size={14} /> Clear Saved Prompts
                         </button>
                     </div>
-                    <p className="text-[10px] text-gray-500 mt-2 text-center">This will remove data from the server for all devices.</p>
                 </div>
             </div>
         </div>
       )}
 
-      <main className="p-4 space-y-6">
-        
-        {/* Model Selection */}
-        <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-800 transition-colors duration-300 shadow-sm">
-            <label className="block text-xs font-medium text-gray-500 mb-2">Model</label>
-            <div className="relative">
-                <Cpu size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                <select 
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-8 pr-8 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                >
-                    {availableModels.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+      {view === 'home' ? (
+        <main className="p-6 flex flex-col items-center justify-center min-h-[80vh] gap-6">
+            <div className="text-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome</h2>
+                <p className="text-gray-500 dark:text-gray-400">Choose a workflow to begin</p>
             </div>
-        </div>
-
-        {/* Image Inputs */}
-        <div className="grid grid-cols-3 gap-3">
-            {images.map((img, idx) => (
-                <ImageInput 
-                    key={idx} 
-                    index={idx} 
-                    image={img} 
-                    disabled={idx > 0 && !images[0]}
-                    onFileSelect={(f) => handleFileSelect(idx, f)}
-                    onServerSelectRequest={() => openServerSelector(idx)}
-                    onUpload={() => handleUploadToServer(idx)}
-                    onClear={() => handleClearImage(idx)}
-                    theme={settings.theme}
-                    allowRemote={settings.enableRemoteInput}
-                />
-            ))}
-        </div>
-
-        {/* Prompt Input */}
-        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
-             <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
-                <PromptManager 
-                    currentPrompt={prompt} 
-                    serverAddress={settings.serverAddress} 
-                    onLoadPrompt={setPrompt}
-                    theme={settings.theme}
-                />
-             </div>
-            <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your edit..."
-                className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
-            />
-        </div>
-
-        {/* LoRA & Seed Config (Collapsible) */}
-        <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900/50 overflow-hidden shadow-sm transition-colors duration-300">
+            
             <button 
-                onClick={() => setShowLoraConfig(!showLoraConfig)}
-                className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => setView('generate')}
+                className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
             >
-                <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <SlidersHorizontal size={16} />
-                    <span className="text-sm font-medium">Advanced Configuration</span>
+                <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                    <Wand2 size={100} />
                 </div>
-                {showLoraConfig ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                <div className="relative z-10 flex flex-col items-start">
+                    <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                        <Wand2 size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Image</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Turbo Diffusion.</p>
+                </div>
             </button>
 
-            {showLoraConfig && (
-                <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
-                    
-                    {/* Resolution Control */}
-                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                        <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
-                        <div className="flex gap-2">
-                            {RESOLUTIONS.map(res => {
-                                const Icon = res.icon;
-                                return (
-                                    <button
-                                        key={res.id}
-                                        onClick={() => setSelectedResolution(res.id)}
-                                        className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${
-                                            selectedResolution === res.id 
-                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                        }`}
-                                    >
-                                        <Icon size={12} className="hidden sm:block" />
-                                        {res.label}
-                                    </button>
-                                );
-                            })}
+            <button 
+                onClick={() => setView('edit')}
+                className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
+            >
+                <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                    <PenTool size={100} />
+                </div>
+                <div className="relative z-10 flex flex-col items-start">
+                    <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                        <PenTool size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Edit Image</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Modify existing images with Qwen Image Edit.</p>
+                </div>
+            </button>
+        </main>
+      ) : (
+        <main className="p-4 space-y-6">
+            
+            {/* EDIT MODE: Model & Images */}
+            {view === 'edit' && (
+                <>
+                    {/* Model Selection */}
+                    <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-800 transition-colors duration-300 shadow-sm">
+                        <label className="block text-xs font-medium text-gray-500 mb-2">Model</label>
+                        <div className="relative">
+                            <Cpu size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                            <select 
+                                value={selectedModel}
+                                onChange={(e) => setSelectedModel(e.target.value)}
+                                className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-8 pr-8 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                            >
+                                {availableModels.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                         </div>
                     </div>
 
-                    {/* Seed Control */}
-                    <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Seed</span>
-                            <div className="flex gap-2">
-                                 <button 
-                                    onClick={() => setSettings({...settings, randomizeSeed: !settings.randomizeSeed})}
-                                    className={`p-1.5 rounded text-xs flex items-center gap-1 transition-colors ${
-                                        settings.randomizeSeed 
-                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 text-${settings.theme}-600 dark:text-${settings.theme}-300 font-medium`
-                                        : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                                    }`}
-                                    title="Auto-randomize seed on generate"
-                                >
-                                    <Sparkles size={12} /> Auto
-                                </button>
-                                <button onClick={randomizeSeed} className={`text-${settings.theme}-500 dark:text-${settings.theme}-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-300`}>
-                                    <RefreshCw size={16} />
-                                </button>
-                            </div>
-                        </div>
-                        <input
-                            type="number"
-                            value={seed}
-                            onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
-                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                        />
-                    </div>
-
-                    <div className="space-y-3">
-                        {loras.map((lora, index) => (
-                            <LoraControl 
-                                key={lora.id}
-                                label={`LoRA ${index + 1}`}
-                                enabled={lora.enabled}
-                                onToggle={() => handleUpdateLora(lora.id, { enabled: !lora.enabled })}
-                                strength={lora.strength} 
-                                onStrengthChange={(val) => handleUpdateLora(lora.id, { strength: val })}
-                                availableLoras={availableLoras}
-                                selectedLoraName={lora.name}
-                                onLoraNameChange={(name) => handleUpdateLora(lora.id, { name })}
-                                onDelete={() => handleRemoveLora(lora.id)}
+                    {/* Image Inputs */}
+                    <div className="grid grid-cols-3 gap-3">
+                        {images.map((img, idx) => (
+                            <ImageInput 
+                                key={idx} 
+                                index={idx} 
+                                image={img} 
+                                disabled={idx > 0 && !images[0]}
+                                onFileSelect={(f) => handleFileSelect(idx, f)}
+                                onServerSelectRequest={() => openServerSelector(idx)}
+                                onUpload={() => handleUploadToServer(idx)}
+                                onClear={() => handleClearImage(idx)}
                                 theme={settings.theme}
+                                allowRemote={settings.enableRemoteInput}
                             />
                         ))}
-
-                        <button 
-                            onClick={handleAddLora}
-                            disabled={loras.length >= 10}
-                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                        >
-                            <Plus size={18} /> Add LoRA
-                        </button>
                     </div>
+                </>
+            )}
+
+            {/* Prompt Input (Common) */}
+            <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
+                    <PromptManager 
+                        currentPrompt={prompt} 
+                        serverAddress={settings.serverAddress} 
+                        onLoadPrompt={setPrompt}
+                        theme={settings.theme}
+                    />
+                </div>
+                <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder={view === 'edit' ? "Describe your edit..." : "Describe the image you want to generate..."}
+                    className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
+                />
+            </div>
+
+            {/* GENERATE MODE: Negative Prompt */}
+            {view === 'generate' && (
+                <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-medium text-gray-500">Negative Prompt</span>
+                    </div>
+                    <textarea
+                        value={negativePrompt}
+                        onChange={(e) => setNegativePrompt(e.target.value)}
+                        placeholder="Things to avoid..."
+                        className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[60px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
+                    />
                 </div>
             )}
-        </div>
 
-        {/* Error Message */}
-        {errorMsg && (
-            <div className="bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-200 p-3 rounded-lg text-sm flex items-start gap-2">
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                <span>{errorMsg}</span>
+            {/* Config (Collapsible) */}
+            <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900/50 overflow-hidden shadow-sm transition-colors duration-300">
+                <button 
+                    onClick={() => setShowLoraConfig(!showLoraConfig)}
+                    className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                    <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <SlidersHorizontal size={16} />
+                        <span className="text-sm font-medium">Advanced Configuration</span>
+                    </div>
+                    {showLoraConfig ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                </button>
+
+                {showLoraConfig && (
+                    <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
+                        
+                        {/* Resolution Control */}
+                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
+                            <div className="flex gap-2 flex-wrap">
+                                {RESOLUTIONS.map(res => {
+                                    const Icon = res.icon;
+                                    return (
+                                        <button
+                                            key={res.id}
+                                            onClick={() => setSelectedResolution(res.id)}
+                                            className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${
+                                                selectedResolution === res.id 
+                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                            }`}
+                                        >
+                                            <Icon size={12} className="hidden sm:block" />
+                                            {res.label}
+                                        </button>
+                                    );
+                                })}
+                                {/* Custom Button */}
+                                <button
+                                    onClick={() => setSelectedResolution('custom')}
+                                    className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${
+                                        selectedResolution === 'custom' 
+                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                    }`}
+                                >
+                                    <Monitor size={12} className="hidden sm:block" />
+                                    Custom
+                                </button>
+                            </div>
+
+                            {selectedResolution === 'custom' && (
+                                <div className="flex gap-3 mt-3 animate-fade-in">
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
+                                        <input 
+                                            type="number" 
+                                            value={customDimensions.width}
+                                            onChange={(e) => setCustomDimensions(prev => ({...prev, width: e.target.value === '' ? '' : parseInt(e.target.value)}))}
+                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                        />
+                                    </div>
+                                    <div className="flex items-end pb-2 text-gray-400">x</div>
+                                     <div className="flex-1">
+                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
+                                        <input 
+                                            type="number" 
+                                            value={customDimensions.height}
+                                            onChange={(e) => setCustomDimensions(prev => ({...prev, height: e.target.value === '' ? '' : parseInt(e.target.value)}))}
+                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Seed Control */}
+                        <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Seed</span>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setSettings({...settings, randomizeSeed: !settings.randomizeSeed})}
+                                        className={`p-1.5 rounded text-xs flex items-center gap-1 transition-colors ${
+                                            settings.randomizeSeed 
+                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 text-${settings.theme}-600 dark:text-${settings.theme}-300 font-medium`
+                                            : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                                        }`}
+                                        title="Auto-randomize seed on generate"
+                                    >
+                                        <Sparkles size={12} /> Auto
+                                    </button>
+                                    <button onClick={randomizeSeed} className={`text-${settings.theme}-500 dark:text-${settings.theme}-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-300`}>
+                                        <RefreshCw size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                            <input
+                                type="number"
+                                value={seed}
+                                onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
+                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                            />
+                        </div>
+
+                        {/* LoRAs (Only in Edit Mode) */}
+                        {view === 'edit' && (
+                            <div className="space-y-3">
+                                {loras.map((lora, index) => (
+                                    <LoraControl 
+                                        key={lora.id}
+                                        label={`LoRA ${index + 1}`}
+                                        enabled={lora.enabled}
+                                        onToggle={() => handleUpdateLora(lora.id, { enabled: !lora.enabled })}
+                                        strength={lora.strength} 
+                                        onStrengthChange={(val) => handleUpdateLora(lora.id, { strength: val })}
+                                        availableLoras={availableLoras}
+                                        selectedLoraName={lora.name}
+                                        onLoraNameChange={(name) => handleUpdateLora(lora.id, { name })}
+                                        onDelete={() => handleRemoveLora(lora.id)}
+                                        theme={settings.theme}
+                                    />
+                                ))}
+
+                                <button 
+                                    onClick={handleAddLora}
+                                    disabled={loras.length >= 10}
+                                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    <Plus size={18} /> Add LoRA
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
-        )}
 
-      </main>
+            {/* Error Message */}
+            {errorMsg && (
+                <div className="bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-200 p-3 rounded-lg text-sm flex items-start gap-2">
+                    <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                    <span>{errorMsg}</span>
+                </div>
+            )}
+
+        </main>
+      )}
 
       {/* Result Preview Modal (Full Screen) */}
       {showResultPreview && lastGeneratedImage && (
           <CompareModal 
             resultImage={lastGeneratedImage}
-            inputImage={images[0]?.previewUrl ? `${images[0].previewUrl}&t=${Date.now()}` : ''}
+            inputImage={getComparisonInputUrl()}
             onClose={() => setShowResultPreview(false)}
             onUseResult={handleUseResult}
             nsfwMode={settings.nsfwMode}
@@ -1122,58 +1428,63 @@ export default function App() {
       )}
 
       {/* Bottom Bar: Generate Button & Status */}
-      <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
-        <button
-            onClick={handleGenerate}
-            disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
-            className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
-                ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR) 
-                    ? `bg-${settings.theme}-600 hover:bg-${settings.theme}-500 hover:scale-[1.02] active:scale-[0.98]` 
-                    : 'bg-gray-400 dark:bg-gray-800 cursor-not-allowed'}`}
-        >
-             {/* Progress Bar Background */}
-             {(status === GenerationStatus.EXECUTING || status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED) && (
-                <div 
-                    className={`absolute left-0 top-0 h-full bg-${settings.theme}-700 transition-all duration-300 ease-out`}
-                    style={{ width: `${progress}%` }}
-                />
-            )}
-            
-            <div className="relative z-10 flex items-center justify-center gap-2 w-full h-full">
-                {status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR ? (
-                    <>
-                        <Zap size={20} className={status === GenerationStatus.FINISHED ? "text-yellow-300" : ""} />
-                        <span>Generate</span>
-                    </>
-                ) : (
-                    <>
-                        {status === GenerationStatus.UPLOADING && <span className="animate-pulse">Uploading...</span>}
-                        {status === GenerationStatus.QUEUED && <span className="animate-pulse">Queued...</span>}
-                        {status === GenerationStatus.EXECUTING && (
-                            <>
-                                <Loader2 size={20} className="animate-spin" />
-                                <span>{progress}%</span>
-                            </>
-                        )}
-                    </>
+      {view !== 'home' && (
+        <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
+            <button
+                onClick={handleGenerateClick}
+                disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
+                className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
+                    ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR) 
+                        ? `bg-${settings.theme}-600 hover:bg-${settings.theme}-500 hover:scale-[1.02] active:scale-[0.98]` 
+                        : 'bg-gray-400 dark:bg-gray-800 cursor-not-allowed'}`}
+            >
+                {/* Progress Bar Background */}
+                {(status === GenerationStatus.EXECUTING || status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED) && (
+                    <div 
+                        className={`absolute left-0 top-0 h-full bg-${settings.theme}-700 transition-all duration-300 ease-out`}
+                        style={{ width: `${progress}%` }}
+                    />
                 )}
-            </div>
-        </button>
-        
-        {/* Stop Button - Only visible when busy */}
-        {(status === GenerationStatus.EXECUTING || status === GenerationStatus.QUEUED) && (
-             <button 
-                onClick={handleInterrupt}
-                className="h-12 w-12 flex items-center justify-center bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800 transition-colors"
-                title="Stop Generation"
-             >
-                 <Square size={20} fill="currentColor" />
-             </button>
-        )}
-      </div>
+                
+                <div className="relative z-10 flex items-center justify-center gap-2 w-full h-full">
+                    {status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR ? (
+                        <>
+                            <Zap size={20} className={status === GenerationStatus.FINISHED ? "text-yellow-300" : ""} />
+                            <span>{view === 'edit' ? 'Edit Image' : 'Generate'}</span>
+                        </>
+                    ) : (
+                        <>
+                            {status === GenerationStatus.UPLOADING && <span className="animate-pulse">{statusMessage || "Uploading..."}</span>}
+                            {status === GenerationStatus.QUEUED && <span className="animate-pulse">{statusMessage || "Queued..."}</span>}
+                            {status === GenerationStatus.EXECUTING && (
+                                <>
+                                    <Loader2 size={20} className="animate-spin" />
+                                    <span>
+                                        {/* Show percentage if generating, otherwise show granular status message */}
+                                        {progress > 0 ? `${progress}%` : (statusMessage || "Processing...")}
+                                    </span>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+            </button>
+            
+            {/* Stop Button - Only visible when busy */}
+            {(status === GenerationStatus.EXECUTING || status === GenerationStatus.QUEUED) && (
+                <button 
+                    onClick={handleInterrupt}
+                    className="h-12 w-12 flex items-center justify-center bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800 transition-colors"
+                    title="Stop Generation"
+                >
+                    <Square size={20} fill="currentColor" />
+                </button>
+            )}
+        </div>
+      )}
 
        {/* Last Generated Result Card */}
-       {lastGeneratedImage && !showResultPreview && (
+       {lastGeneratedImage && !showResultPreview && view !== 'home' && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 w-[90%] max-w-[380px] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xl overflow-hidden animate-fade-in z-30 transition-colors duration-300">
             <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                 <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>

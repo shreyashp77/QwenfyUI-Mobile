@@ -19,6 +19,8 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
   const [inputError, setInputError] = useState(false);
   const sliderContainerRef = useRef<HTMLDivElement>(null);
 
+  const showComparison = Boolean(inputImage);
+
   const handleMove = (clientX: number) => {
       if (sliderContainerRef.current) {
           const rect = sliderContainerRef.current.getBoundingClientRect();
@@ -61,11 +63,11 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
         <div 
             ref={sliderContainerRef}
             className="relative inline-block overflow-hidden rounded-lg shadow-2xl bg-black"
-            onTouchMove={handleTouchMove}
-            onTouchEnd={() => setIsDragging(false)}
-            onMouseMove={handleMouseMove}
-            onMouseUp={() => setIsDragging(false)}
-            onMouseLeave={() => setIsDragging(false)}
+            onTouchMove={showComparison ? handleTouchMove : undefined}
+            onTouchEnd={showComparison ? () => setIsDragging(false) : undefined}
+            onMouseMove={showComparison ? handleMouseMove : undefined}
+            onMouseUp={showComparison ? () => setIsDragging(false) : undefined}
+            onMouseLeave={showComparison ? () => setIsDragging(false) : undefined}
             style={{ touchAction: 'none' }} // Prevent page scroll while dragging
         >
             {/* 1. Background Layer: Result Image (Acts as the strut/layout definition) */}
@@ -76,52 +78,54 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
                 draggable={false}
             />
             
-            {/* 2. Foreground Layer: Original Image (Clipped & Stretched to match Result frame) */}
-            {/* Wrapper Div with Background ensures that if input is smaller/different aspect, we don't see Result underneath */}
-            <div 
-                className="absolute inset-0 w-full h-full select-none bg-gray-100 dark:bg-gray-900"
-                style={{ 
-                    clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` 
-                }}
-            >
-                {inputError ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 p-4 text-center">
-                        <ImageOff size={48} className="mb-2 opacity-50" />
-                        <span className="text-xs font-bold">Preview Unavailable</span>
-                        <span className="text-[10px] opacity-70">Format not supported by browser</span>
+            {/* Conditional Comparison Layers */}
+            {showComparison && (
+                <>
+                    {/* 2. Foreground Layer: Original Image (Clipped & Stretched to match Result frame) */}
+                    <div 
+                        className="absolute inset-0 w-full h-full select-none bg-gray-100 dark:bg-gray-900"
+                        style={{ 
+                            clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` 
+                        }}
+                    >
+                        {inputError ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 p-4 text-center">
+                                <ImageOff size={48} className="mb-2 opacity-50" />
+                                <span className="text-xs font-bold">Preview Unavailable</span>
+                                <span className="text-[10px] opacity-70">Format not supported by browser</span>
+                            </div>
+                        ) : (
+                            <img 
+                                src={inputImage}
+                                alt="Original"
+                                onError={() => setInputError(true)}
+                                className="w-full h-full object-contain"
+                                draggable={false}
+                            />
+                        )}
                     </div>
-                ) : (
-                    <img 
-                        src={inputImage}
-                        alt="Original"
-                        onError={() => setInputError(true)}
-                        className="w-full h-full object-contain"
-                        draggable={false}
-                    />
-                )}
-            </div>
 
-            {/* 3. Slider Divider */}
-            <div 
-                className="absolute top-0 bottom-0 w-1 bg-white/80 cursor-ew-resize flex items-center justify-center z-10 shadow-[0_0_10px_rgba(0,0,0,0.5)]"
-                style={{ left: `${sliderPosition}%` }}
-                onTouchStart={(e) => handleInteractionStart(e.touches[0].clientX)}
-                onMouseDown={(e) => handleInteractionStart(e.clientX)}
-            >
-                <div className={`w-8 h-8 bg-white rounded-full flex items-center justify-center text-black shadow-lg transform transition-transform ${isDragging ? 'scale-110' : ''}`}>
-                    <MoveHorizontal size={16} />
-                </div>
-            </div>
+                    {/* 3. Slider Divider */}
+                    <div 
+                        className="absolute top-0 bottom-0 w-1 bg-white/80 cursor-ew-resize flex items-center justify-center z-10 shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+                        style={{ left: `${sliderPosition}%` }}
+                        onTouchStart={(e) => handleInteractionStart(e.touches[0].clientX)}
+                        onMouseDown={(e) => handleInteractionStart(e.clientX)}
+                    >
+                        <div className={`w-8 h-8 bg-white rounded-full flex items-center justify-center text-black shadow-lg transform transition-transform ${isDragging ? 'scale-110' : ''}`}>
+                            <MoveHorizontal size={16} />
+                        </div>
+                    </div>
 
-            {/* Labels */}
-            <>
-                <span className={`absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-bold bg-white/80 dark:bg-black/60 text-gray-900 dark:text-white backdrop-blur-md pointer-events-none transition-opacity shadow-md ${sliderPosition < 10 ? 'opacity-0' : 'opacity-100'}`}>
-                    Original
-                </span>
-                <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-${theme}-100 dark:bg-${theme}-600/90 text-${theme}-900 dark:text-white backdrop-blur-md pointer-events-none transition-opacity shadow-md ${sliderPosition > 90 ? 'opacity-0' : 'opacity-100'}`}>
-                    Result
-                </span>
-            </>
+                    {/* Labels */}
+                    <span className={`absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-bold bg-white/80 dark:bg-black/60 text-gray-900 dark:text-white backdrop-blur-md pointer-events-none transition-opacity shadow-md ${sliderPosition < 10 ? 'opacity-0' : 'opacity-100'}`}>
+                        Original
+                    </span>
+                    <span className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-${theme}-100 dark:bg-${theme}-600/90 text-${theme}-900 dark:text-white backdrop-blur-md pointer-events-none transition-opacity shadow-md ${sliderPosition > 90 ? 'opacity-0' : 'opacity-100'}`}>
+                        Result
+                    </span>
+                </>
+            )}
             
             {nsfwMode && !resultRevealed && (
                 <div className="absolute inset-0 flex items-center justify-center z-20" onClick={handleOverlayClick}>
@@ -147,3 +151,4 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
 };
 
 export default CompareModal;
+        
