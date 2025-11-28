@@ -1154,7 +1154,7 @@ export default function App() {
                     </button>
                 </main>
             ) : (
-                <main className="p-4 space-y-6">
+                <main className="p-4 space-y-6 pb-24">
 
                     {/* EDIT MODE: Model & Images */}
                     {view === 'edit' && (
@@ -1230,6 +1230,57 @@ export default function App() {
                                 placeholder="Things to avoid..."
                                 className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[60px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
                             />
+                        </div>
+                    )}
+
+                    {/* Last Generated Result Card (Non-Sticky) */}
+                    {lastGeneratedImage && !showResultPreview && (
+                        <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
+                            <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                                <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
+                                    <Check size={12} /> Generation Complete
+                                </span>
+                                <div className="flex gap-1">
+                                    <a
+                                        href={lastGeneratedImage}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                                        title="Open in New Tab"
+                                    >
+                                        <ExternalLink size={14} />
+                                    </a>
+                                    <button onClick={handleUseResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Input">
+                                        <ArrowUpRight size={14} />
+                                    </button>
+                                    <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="relative h-64 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
+                                <img
+                                    src={lastGeneratedImage}
+                                    className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
+                                    alt="Result"
+                                />
+                                {settings.nsfwMode && !resultRevealed && (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
+                                    </div>
+                                )}
+                                <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors">
+                                    <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
+                                </div>
+
+                                {/* Duration Badge */}
+                                {lastGenerationDuration > 0 && (
+                                    <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                        <Clock size={10} />
+                                        {(lastGenerationDuration / 1000).toFixed(1)}s
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -1445,56 +1496,7 @@ export default function App() {
                 </div>
             )}
 
-            {/* Last Generated Result Card */}
-            {lastGeneratedImage && !showResultPreview && view !== 'home' && (
-                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 w-[90%] max-w-[380px] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xl overflow-hidden animate-fade-in z-30 transition-colors duration-300">
-                    <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                        <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
-                            <Check size={12} /> Generation Complete
-                        </span>
-                        <div className="flex gap-1">
-                            <a
-                                href={lastGeneratedImage}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
-                                title="Open in New Tab"
-                            >
-                                <ExternalLink size={14} />
-                            </a>
-                            <button onClick={handleUseResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Input">
-                                <ArrowUpRight size={14} />
-                            </button>
-                            <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
-                                <X size={14} />
-                            </button>
-                        </div>
-                    </div>
-                    <div className="relative h-48 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
-                        <img
-                            src={lastGeneratedImage}
-                            className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
-                            alt="Result"
-                        />
-                        {settings.nsfwMode && !resultRevealed && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
-                            </div>
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors">
-                            <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
-                        </div>
 
-                        {/* Duration Badge */}
-                        {lastGenerationDuration > 0 && (
-                            <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                <Clock size={10} />
-                                {(lastGenerationDuration / 1000).toFixed(1)}s
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* History Modal */}
             {showHistory && (
