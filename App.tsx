@@ -619,17 +619,37 @@ export default function App() {
         setErrorMsg("Generation stopped by user.");
     }
 
-    const handleClearServerHistory = async () => {
-        if (confirm("Are you sure you want to clear the shared history?")) {
+    const handleClearHistory = async () => {
+        if (confirm("Are you sure you want to clear shared history AND delete all output images? This cannot be undone.")) {
+            let error = null;
+
+            // 1. Clear Server History
             try {
                 await clearServerHistory(settings.serverAddress);
                 setHistory([]);
                 setShowHistory(false);
-                setToastMessage("Shared history cleared 🧹");
-                setTimeout(() => setToastMessage(null), 3000);
             } catch (e) {
                 console.error(e);
-                setErrorMsg("Failed to clear server history");
+                error = "Failed to clear server history";
+            }
+
+            // 2. Clear Output Images
+            try {
+                const response = await fetch('/api/clear-output', { method: 'POST' });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || "Unknown error");
+                }
+            } catch (e) {
+                console.error(e);
+                error = error ? `${error} | Failed to clear output` : "Failed to clear output folder";
+            }
+
+            if (error) {
+                setErrorMsg(error);
+            } else {
+                setToastMessage("History & Output cleared 🧹");
+                setTimeout(() => setToastMessage(null), 3000);
             }
         }
     }
@@ -645,6 +665,8 @@ export default function App() {
             }
         }
     }
+
+
 
     // --- Dynamic LoRA Handlers ---
     const handleAddLora = () => {
@@ -1090,10 +1112,10 @@ export default function App() {
                             <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
                             <div className="flex flex-col gap-2">
                                 <button
-                                    onClick={handleClearServerHistory}
+                                    onClick={handleClearHistory}
                                     className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800"
                                 >
-                                    <Trash2 size={14} /> Clear Shared History
+                                    <Trash2 size={14} /> Clear History
                                 </button>
                                 <button
                                     onClick={handleClearSavedPrompts}
