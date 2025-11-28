@@ -122,7 +122,7 @@ export default function App() {
             nsfwMode: false,
             enableRemoteInput: false,
             darkMode: true,
-            theme: 'purple',
+            theme: THEME_OPTIONS[Math.floor(Math.random() * THEME_OPTIONS.length)],
             customColor: '#ffffff',
             randomizeSeed: true,
             enableComparison: false
