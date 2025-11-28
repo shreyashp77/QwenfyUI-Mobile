@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, FileType, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft } from 'lucide-react';
+import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
-import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, clearSavedPrompts, freeMemory } from './services/comfyService';
+import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
 import LoraControl from './components/LoraControl';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
@@ -654,17 +654,7 @@ export default function App() {
         }
     }
 
-    const handleClearSavedPrompts = async () => {
-        if (confirm("Are you sure you want to clear ALL saved prompts from the server? This cannot be undone.")) {
-            try {
-                await clearSavedPrompts(settings.serverAddress);
-                alert("All saved prompts have been cleared.");
-            } catch (e) {
-                console.error(e);
-                setErrorMsg("Failed to clear saved prompts");
-            }
-        }
-    }
+
 
 
 
@@ -1117,12 +1107,7 @@ export default function App() {
                                 >
                                     <Trash2 size={14} /> Clear History
                                 </button>
-                                <button
-                                    onClick={handleClearSavedPrompts}
-                                    className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-600 dark:text-orange-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-orange-300 dark:hover:border-orange-800"
-                                >
-                                    <FileType size={14} /> Clear Saved Prompts
-                                </button>
+
                             </div>
                         </div>
                     </div>
@@ -1216,12 +1201,14 @@ export default function App() {
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
-                            <PromptManager
-                                currentPrompt={prompt}
-                                serverAddress={settings.serverAddress}
-                                onLoadPrompt={setPrompt}
-                                theme={settings.theme}
-                            />
+                            {settings.enableRemoteInput && (
+                                <PromptManager
+                                    currentPrompt={prompt}
+                                    serverAddress={settings.serverAddress}
+                                    onLoadPrompt={setPrompt}
+                                    theme={settings.theme}
+                                />
+                            )}
                         </div>
                         <textarea
                             value={prompt}
