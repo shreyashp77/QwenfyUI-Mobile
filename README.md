@@ -24,17 +24,21 @@ A modern, feature-rich, mobile-first web frontend for ComfyUI. This application 
 ### 🖼️ Advanced Image Handling
 - **"Before vs After" Slider**: Interactive comparison slider to visualize edit results against the original input (Toggleable in Settings).
 - **HEIC/HEIF Support**: Native support for iPhone image formats with automatic client-side conversion.
-- **Remote Input**: Browse and select images directly from your ComfyUI server's input folder (Easter Egg 😉)
+- **Remote Input**: Browse and select images directly from your ComfyUI server's input folder.
+- **Prompt Manager**: Save and load your favorite prompts. (Hidden by default: Tap the lightning icon 7 times to reveal).
+- **Non-Sticky Preview**: The generated result card scrolls naturally with the page for a better mobile experience.
 - **Resolution Control**: Optimized presets (720x1280, 1080x1920, 1080x2560) or **Custom Dimensions** for any aspect ratio.
 
 ### ⚡ Smart Workflow Tools
 - **Dynamic LoRA Stack**: Add, remove, and configure unlimited LoRAs (up to 10) in Edit mode without touching the backend graph.
 - **Auto-Randomize Seed**: Automatically generates new variations by default (toggleable).
 - **Smart History**:
+  - **Single Image Deletion**: Delete specific images directly from the gallery or preview (removes file from server).
+  - **Clear History**: One-click cleanup of both server history and local output files.
   - Cross-device synchronization.
   - "Use as Input" workflow for iterative generation/editing.
   - Persistent prompt storage.
-- **Resilience**: Auto-retry mechanisms for OOM (Out Of Memory) errors and connection drops.
+- **Resilience**: Auto-retry mechanisms for OOM (Out Of Memory) errors and connection drops. Includes CPU offloading for large models on first run.
 
 ## 🛠️ Prerequisites
 
@@ -103,7 +107,8 @@ python main.py --enable-cors-header "*"
 The app tries to convert HEIC images in the browser. If this fails, it uploads the original file. Ensure `pillow-heif` is installed on your ComfyUI python environment for server-side support.
 
 **"Image not found" / Missing History**
-If you manually delete images from your ComfyUI `output` folder, the app history might get out of sync. Go to **Settings -> Server Data -> Clear Shared History** to fix this.
+**"Image not found" / Missing History**
+If you manually delete images from your ComfyUI `output` folder, the app history might get out of sync. Go to **Settings -> Clear History** to clean up both the server history and the output folder.
 
 **Copy button not working?**
 The app includes a fallback for non-secure contexts (HTTP/LAN). If it still fails, ensure your browser has permissions to access the clipboard.
