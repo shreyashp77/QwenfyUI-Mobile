@@ -271,31 +271,7 @@ export default function App() {
     }
   }, [retryTrigger]);
 
-  // Watchdog for stuck model loads
-  useEffect(() => {
-    let watchdogInterval: ReturnType<typeof setInterval>;
-    
-    if (status === GenerationStatus.EXECUTING && progress === 0) {
-        watchdogInterval = setInterval(async () => {
-            const elapsed = Date.now() - startTimeRef.current;
-            // If stuck at 0% for > 25s and haven't retried yet
-            if (elapsed > 25000 && !retryAttemptedRef.current) {
-                console.log("Detected stuck model load. Triggering retry...");
-                retryAttemptedRef.current = true;
-                
-                try {
-                    await interruptGeneration(settings.serverAddress);
-                    // Trigger the retry effect
-                    setRetryTrigger(prev => prev + 1);
-                } catch (e) {
-                   //
-                }
-            }
-        }, 1000);
-    }
-    
-    return () => clearInterval(watchdogInterval);
-  }, [status, progress, settings.serverAddress]);
+
 
   // Polling fallback for flaky WS or missed messages
   useEffect(() => {
