@@ -181,7 +181,7 @@ export default function App() {
     const executingInputFilenameRef = useRef<string | undefined>(undefined); // Track input image for history comparison
     const startTimeRef = useRef<number>(0);
     const wsRef = useRef<WebSocket | null>(null);
-    const colorInputRef = useRef<HTMLInputElement>(null);
+
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
 
 
@@ -1075,22 +1075,18 @@ export default function App() {
 
                                 {/* Custom Color Picker */}
                                 <div className="relative w-8 h-8">
-                                    <button
-                                        onClick={() => {
-                                            setSettings({ ...settings, theme: 'custom' });
-                                            colorInputRef.current?.click();
-                                        }}
+                                    <div
                                         className={`w-full h-full rounded-full flex items-center justify-center transition-all overflow-hidden bg-gradient-to-br from-red-500 via-green-500 to-blue-500 ${settings.theme === 'custom' ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
                                         title="Custom Color"
                                     >
                                         {settings.theme === 'custom' && <Check size={14} className="text-white drop-shadow-md" />}
-                                    </button>
+                                    </div>
                                     <input
-                                        ref={colorInputRef}
                                         type="color"
                                         value={settings.customColor || '#ffffff'}
                                         onChange={(e) => setSettings({ ...settings, theme: 'custom', customColor: e.target.value })}
-                                        className="sr-only"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                        title="Choose custom color"
                                     />
                                 </div>
                             </div>

@@ -49,6 +49,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
     const [previewRevealed, setPreviewRevealed] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [previewError, setPreviewError] = useState(false);
+    const [interactionLocked, setInteractionLocked] = useState(false);
     const [comparingItem, setComparingItem] = useState<HistoryItem | null>(null);
 
     // Swipe refs
@@ -67,6 +68,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
 
     const handleClosePreview = () => {
         setPreviewIndex(null);
+        // Lock interaction briefly to prevent ghost clicks on underlying elements
+        setInteractionLocked(true);
+        setTimeout(() => setInteractionLocked(false), 300);
     };
 
     const handleNext = (e?: React.MouseEvent) => {
@@ -175,7 +179,13 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
             <div className="fixed inset-0 z-50 bg-white/95 dark:bg-black/95 backdrop-blur-md flex flex-col transition-colors duration-300">
                 <div className="p-4 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">Generation History</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose();
+                        }}
+                        className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                    >
                         <X size={24} />
                     </button>
                 </div>
@@ -227,6 +237,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
+                                            if (interactionLocked) return;
                                             onDelete(item.filename);
                                         }}
                                         className="absolute top-2 right-2 p-1.5 bg-white/90 dark:bg-black/60 hover:bg-red-100 dark:hover:bg-red-900/50 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-all z-10"
