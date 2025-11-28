@@ -645,14 +645,36 @@ export default function App() {
                 error = error ? `${error} | Failed to clear output` : "Failed to clear output folder";
             }
 
-            if (error) {
-                setErrorMsg(error);
-            } else {
-                setToastMessage("History & Output cleared 🧹");
-                setTimeout(() => setToastMessage(null), 3000);
-            }
         }
     }
+
+    const handleDeleteImage = async (filename: string) => {
+        if (confirm("Are you sure you want to delete this image? This cannot be undone.")) {
+            try {
+                const response = await fetch('/api/delete-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    setHistory(prev => prev.filter(item => item.filename !== filename));
+                    setToastMessage("Image deleted 🗑️");
+                    setTimeout(() => setToastMessage(null), 3000);
+
+                    // If we deleted the last generated image, clear the preview
+                    if (lastGeneratedImage && lastGeneratedImage.includes(filename)) {
+                        setLastGeneratedImage(null);
+                    }
+                } else {
+                    throw new Error(data.error || "Unknown error");
+                }
+            } catch (e) {
+                console.error(e);
+                setErrorMsg("Failed to delete image. Ensure you are running in dev mode.");
+            }
+        }
+    };
 
 
 
@@ -1504,6 +1526,7 @@ export default function App() {
                     history={history}
                     onSelect={handleHistorySelect}
                     onClose={() => setShowHistory(false)}
+                    onDelete={handleDeleteImage}
                     nsfwMode={settings.nsfwMode}
                     theme={settings.theme}
                     serverAddress={settings.serverAddress}
