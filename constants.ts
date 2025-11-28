@@ -133,7 +133,7 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
   "110": {
     "inputs": {
       "model_name": "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors",
-      "cpu_offload": "auto",
+      "cpu_offload": "enable",
       "num_blocks_on_gpu": 1,
       "use_pin_memory": "disable"
     },
@@ -208,7 +208,7 @@ export const BASE_WORKFLOW: ComfyWorkflow = {
   "129": {
     "inputs": {
       "lora_count": 1,
-      "cpu_offload": "disable",
+      "cpu_offload": "enable",
       "lora_name_1": "None",
       "lora_strength_1": 1,
       "lora_name_2": "None",

@@ -76,8 +76,8 @@ python main.py --enable-cors-header "*"
     npm run dev
     ```
 4.  **Access the App**:
-    *   **Local PC**: Open `http://localhost:1234`
-    *   **Mobile Device**: Look at the terminal output for the **Network** URL (e.g., `http://192.168.1.X:1234`). Enter this IP on your phone's browser.
+    *   **Local PC**: Open `http://localhost:7777`
+    *   **Mobile Device**: Look at the terminal output for the **Network** URL (e.g., `http://192.168.1.X:7777`). Enter this IP on your phone's browser.
 
 ## 📖 Usage Guide
 
