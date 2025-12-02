@@ -20,9 +20,15 @@ export default defineConfig({
               if (fs.existsSync(outputDir)) {
                 const files = fs.readdirSync(outputDir);
                 for (const file of files) {
-                  fs.unlinkSync(path.join(outputDir, file));
+                  const filePath = path.join(outputDir, file);
+                  const stat = fs.statSync(filePath);
+                  if (stat.isDirectory()) {
+                    fs.rmSync(filePath, { recursive: true, force: true });
+                  } else {
+                    fs.unlinkSync(filePath);
+                  }
                 }
-                console.log(`[Clear Output] Deleted ${files.length} files from ${outputDir}`);
+                console.log(`[Clear Output] Deleted ${files.length} files/folders from ${outputDir}`);
               } else {
                 console.log(`[Clear Output] Directory not found: ${outputDir}`);
               }

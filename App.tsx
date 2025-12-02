@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from './constants';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
 import LoraControl from './components/LoraControl';
@@ -145,6 +145,7 @@ export default function App() {
     const [negativePrompt, setNegativePrompt] = useState<string>("blurry, ugly, bad quality, distortion");
     const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1000000000000));
     const [promptHistory, setPromptHistory] = useState<string[]>([]);
+    const [selectedStyle, setSelectedStyle] = useState<string>('none');
     const [selectedResolution, setSelectedResolution] = useState<string>('9:16');
     // Use number | string to allow empty state for inputs
     const [customDimensions, setCustomDimensions] = useState<{ width: number | string, height: number | string }>({ width: 720, height: 1280 });
@@ -874,7 +875,12 @@ export default function App() {
                 workflow["3"].inputs.sampler_name = selectedSampler;
                 workflow["3"].inputs.scheduler = selectedScheduler;
                 workflow["3"].inputs.steps = steps;
-                workflow["6"].inputs.text = currentPrompt;
+
+                // Apply Style
+                const style = STYLES.find(s => s.id === selectedStyle);
+                const stylePrompt = style ? style.prompt : "";
+                workflow["6"].inputs.text = currentPrompt + stylePrompt;
+
                 workflow["7"].inputs.text = negativePrompt;
 
                 workflow["13"].inputs.width = width;
@@ -1238,6 +1244,25 @@ export default function App() {
 
                     {/* Prompt Input (Common) */}
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+
+                        {/* Style Selector (Generate Mode Only) */}
+                        {view === 'generate' && (
+                            <div className="mb-3 overflow-x-auto no-scrollbar p-1">
+                                <div className="flex gap-2">
+                                    {STYLES.map(style => (
+                                        <button
+                                            key={style.id}
+                                            onClick={() => setSelectedStyle(style.id)}
+                                            className={`flex-shrink-0 relative overflow-hidden rounded-lg w-20 h-12 flex items-center justify-center transition-all ${selectedStyle === style.id ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-' + settings.theme + '-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+                                        >
+                                            <div className={`absolute inset-0 ${style.color}`} />
+                                            <span className={`relative z-10 text-[10px] font-bold ${style.id === 'none' ? 'text-gray-800 dark:text-gray-200' : (style.id === 'watercolor' || style.id === 'vintage' ? 'text-gray-800' : 'text-white')} drop-shadow-sm`}>{style.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
                             {settings.enableRemoteInput && (
@@ -1295,7 +1320,7 @@ export default function App() {
                                 <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
                                     <Check size={12} /> Generation Complete
                                 </span>
-                                <div className="flex gap-1">
+                                <div className="flex gap-4">
                                     <a
                                         href={lastGeneratedImage}
                                         target="_blank"

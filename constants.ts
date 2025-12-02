@@ -12,6 +12,24 @@ export const SCHEDULER_OPTIONS = [
   "normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"
 ];
 
+export interface Style {
+  id: string;
+  name: string;
+  prompt: string;
+  color: string;
+}
+
+export const STYLES: Style[] = [
+  { id: 'none', name: 'None', prompt: '', color: 'bg-gray-100 dark:bg-gray-800' },
+  { id: 'cinematic', name: 'Cinematic', prompt: ', cinematic lighting, 8k, highly detailed, dramatic atmosphere', color: 'bg-gradient-to-br from-gray-800 to-black text-white' },
+  { id: 'anime', name: 'Anime', prompt: ', anime style, vibrant colors, studio ghibli, makoto shinkai', color: 'bg-gradient-to-br from-pink-400 to-purple-500 text-white' },
+  { id: 'photorealistic', name: 'Realism', prompt: ', photorealistic, 8k, raw photo, dslr, soft lighting', color: 'bg-gradient-to-br from-green-400 to-emerald-600 text-white' },
+  { id: 'cyberpunk', name: 'Cyberpunk', prompt: ', cyberpunk, neon lights, futuristic, high tech, detailed', color: 'bg-gradient-to-br from-yellow-400 to-pink-600 text-white' },
+  { id: 'watercolor', name: 'Watercolor', prompt: ', watercolor painting, artistic, soft edges, pastel colors', color: 'bg-gradient-to-br from-blue-300 to-purple-300 text-gray-800' },
+  { id: '3d', name: '3D Render', prompt: ', 3d render, octane render, unreal engine 5, ray tracing', color: 'bg-gradient-to-br from-orange-400 to-red-500 text-white' },
+  { id: 'vintage', name: 'Vintage', prompt: ', vintage style, retro, film grain, faded colors, 1980s', color: 'bg-gradient-to-br from-yellow-200 to-orange-300 text-gray-800' },
+];
+
 export const BASE_WORKFLOW: ComfyWorkflow = {
   "3": {
     "inputs": {
