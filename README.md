@@ -9,7 +9,10 @@ A modern, feature-rich, mobile-first web frontend for ComfyUI. This application 
 1.  **Generate Mode (Text-to-Image)**:
     *   Lightning-fast image creation using **Z Image Turbo**.
     *   Uses Qwen 3 4B CLIP for superior prompt understanding.
-    *   Simple interface: Positive/Negative prompts and resolution control.
+    *   **Visual Style Selector**: Choose from 8+ preset styles (Cinematic, Anime, Realism, etc.) with live previews.
+    *   **Aspect Ratio Selector**: Quickly switch between 1:1, 9:16, 16:9, 4:3, and 3:4 ratios.
+    *   **Generation Steps**: Adjustable step count for balancing speed vs quality.
+    *   **Prompt History**: Quickly access your last 10 prompts.
 2.  **Edit Mode (Image-to-Image)**:
     *   Advanced editing using the Nunchaku Qwen workflow.
     *   Supports up to 3 input images for complex composition.
@@ -53,8 +56,9 @@ A modern, feature-rich, mobile-first web frontend for ComfyUI. This application 
     *   **Generate**: `z_image_turbo_bf16.safetensors` (Z Image Turbo) and `qwen_3_4b.safetensors` (CLIP).
     *   *Note: Model names can be adjusted in `src/constants.ts` if yours differ.*
 
-## ⚙️ ComfyUI Configuration (Crucial!)
+## ⚙️ Configuration
 
+### ComfyUI CORS (Crucial!)
 To allow this web app to communicate with your ComfyUI server, you **must** enable Cross-Origin Resource Sharing (CORS).
 
 1.  Open your terminal/command prompt.
@@ -65,7 +69,19 @@ To allow this web app to communicate with your ComfyUI server, you **must** enab
 python main.py --enable-cors-header "*"
 ```
 
-*Without this flag, the web app will fail to connect.*
+### Environment Variables
+You can configure the frontend server using a `.env` file in the project root.
+
+1.  Copy `.env.sample` to `.env`.
+2.  Edit `.env` to set your desired configuration:
+
+```env
+VITE_ALLOWED_HOSTS=pc.local
+VITE_PORT=7777
+```
+
+*   `VITE_ALLOWED_HOSTS`: The hostname you want to allow access from (e.g., `pc.local` for local network access).
+*   `VITE_PORT`: The port the frontend server will run on.
 
 ## 🚀 Installation & Running
 
@@ -80,7 +96,7 @@ python main.py --enable-cors-header "*"
     npm run dev
     ```
 4.  **Access the App**:
-    *   **Local PC**: Open `http://localhost:7777`
+    *   **Local PC**: Open `http://localhost:7777` (or your configured port).
     *   **Mobile Device**: Look at the terminal output for the **Network** URL (e.g., `http://192.168.1.X:7777`). Enter this IP on your phone's browser.
 
 ## 📖 Usage Guide
@@ -91,7 +107,10 @@ python main.py --enable-cors-header "*"
 
 ### 2. Generate Mode
 *   Select "Generate Image" from the home screen.
-*   Enter a **Positive Prompt** (what you want) and **Negative Prompt** (what to avoid).
+*   **Style**: Choose a visual style (e.g., Cinematic, Anime) from the top selector.
+*   **Prompt**: Enter a **Positive Prompt** (what you want) and **Negative Prompt** (what to avoid).
+*   **History**: Tap a previous prompt from the history chips to reuse it.
+*   **Settings**: Adjust **Aspect Ratio** and **Steps** in the "Advanced Configuration" section.
 *   Hit "Generate" to create an image using the **Z Image Turbo** workflow.
 
 ### 3. Edit Mode
@@ -107,7 +126,6 @@ python main.py --enable-cors-header "*"
 The app tries to convert HEIC images in the browser. If this fails, it uploads the original file. Ensure `pillow-heif` is installed on your ComfyUI python environment for server-side support.
 
 **"Image not found" / Missing History**
-**"Image not found" / Missing History**
 If you manually delete images from your ComfyUI `output` folder, the app history might get out of sync. Go to **Settings -> Clear History** to clean up both the server history and the output folder.
 
 **Copy button not working?**
@@ -117,7 +135,7 @@ The app includes a fallback for non-secure contexts (HTTP/LAN). If it still fail
 
 *   `src/App.tsx`: Main application controller.
 *   `src/services/comfyService.ts`: API layer for ComfyUI interaction.
-*   `src/constants.ts`: Workflow definitions (`BASE_WORKFLOW` for Edit, `GENERATE_WORKFLOW` for Gen).
+*   `src/constants.ts`: Workflow definitions (`BASE_WORKFLOW` for Edit, `GENERATE_WORKFLOW` for Gen), Styles, and Aspect Ratios.
 *   `src/components/`:
     *   `CompareModal.tsx`: The before/after slider logic.
     *   `HistoryGallery.tsx`: History visualization.
