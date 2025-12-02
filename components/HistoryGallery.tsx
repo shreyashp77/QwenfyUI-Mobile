@@ -181,6 +181,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">Generation History</h2>
                     <button
                         onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             onClose();
                         }}
