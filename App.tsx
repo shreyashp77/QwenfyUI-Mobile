@@ -1298,23 +1298,7 @@ export default function App() {
                     {/* Prompt Input (Common) */}
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
 
-                        {/* Style Selector (Generate Mode Only) */}
-                        {view === 'generate' && (
-                            <div className="mb-3 overflow-x-auto no-scrollbar p-1">
-                                <div className="flex gap-2">
-                                    {STYLES.map(style => (
-                                        <button
-                                            key={style.id}
-                                            onClick={() => setSelectedStyle(style.id)}
-                                            className={`flex-shrink-0 relative overflow-hidden rounded-lg w-20 h-12 flex items-center justify-center transition-all ${selectedStyle === style.id ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-' + settings.theme + '-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
-                                        >
-                                            <div className={`absolute inset-0 ${style.color}`} />
-                                            <span className={`relative z-10 text-[10px] font-bold ${style.id === 'none' ? 'text-gray-800 dark:text-gray-200' : (style.id === 'watercolor' || style.id === 'vintage' ? 'text-gray-800' : 'text-white')} drop-shadow-sm`}>{style.name}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+
 
                         <div className="flex justify-between items-center mb-2">
                             <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
@@ -1349,7 +1333,19 @@ export default function App() {
                             placeholder={view === 'edit' ? "Describe your edit..." : "Describe the image you want to generate..."}
                             className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
                         />
+                        <div className="flex justify-end mt-2">
+                            <button
+                                onClick={() => setPrompt("")}
+                                className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
+                            >
+                                <Trash2 size={12} /> Clear Prompt
+                            </button>
+                        </div>
+
+
                     </div>
+
+
 
                     {/* GENERATE MODE: Negative Prompt */}
                     {view === 'generate' && (
@@ -1363,6 +1359,29 @@ export default function App() {
                                 placeholder="Things to avoid..."
                                 className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[60px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
                             />
+                        </div>
+                    )}
+
+                    {/* GENERATE MODE: Styles */}
+                    {view === 'generate' && (
+                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs font-medium text-gray-500">Styles</span>
+                            </div>
+                            <div className="overflow-x-auto no-scrollbar p-1">
+                                <div className="flex gap-2">
+                                    {STYLES.map(style => (
+                                        <button
+                                            key={style.id}
+                                            onClick={() => setSelectedStyle(style.id)}
+                                            className={`flex-shrink-0 relative overflow-hidden rounded-lg w-20 h-12 flex items-center justify-center transition-all ${selectedStyle === style.id ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-' + settings.theme + '-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+                                        >
+                                            <div className={`absolute inset-0 ${style.color}`} />
+                                            <span className={`relative z-10 text-[10px] font-bold ${style.id === 'none' ? 'text-gray-800 dark:text-gray-200' : (style.id === 'watercolor' || style.id === 'vintage' ? 'text-gray-800' : 'text-white')} drop-shadow-sm`}>{style.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     )}
 
