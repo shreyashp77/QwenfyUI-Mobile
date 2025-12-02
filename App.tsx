@@ -12,6 +12,8 @@ import ServerImageSelector from './components/ServerImageSelector';
 import CompareModal from './components/CompareModal';
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
+import { haptic } from './services/hapticService';
+import { sound } from './services/soundService';
 
 const getHostname = () => window.location.hostname || 'localhost';
 const DEFAULT_SERVER = `http://${getHostname()}:8188`;
@@ -108,6 +110,10 @@ export default function App() {
                 if (parsed.enableRemoteInput === undefined) parsed.enableRemoteInput = false;
                 if (parsed.randomizeSeed === undefined) parsed.randomizeSeed = true;
                 if (parsed.enableComparison === undefined) parsed.enableComparison = false;
+                // Migration: If either was enabled, enable feedback
+                if (parsed.enableFeedback === undefined) {
+                    parsed.enableFeedback = (parsed.enableHaptics !== false) || (parsed.enableSound !== false);
+                }
 
                 // Repair invalid server address from bad local storage state
                 if (!parsed.serverAddress || parsed.serverAddress.includes('://:')) {
@@ -127,7 +133,8 @@ export default function App() {
             theme: THEME_OPTIONS[Math.floor(Math.random() * THEME_OPTIONS.length)],
             customColor: '#ffffff',
             randomizeSeed: true,
-            enableComparison: false
+            enableComparison: false,
+            enableFeedback: true,
         };
     });
 
@@ -193,6 +200,16 @@ export default function App() {
 
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
 
+
+    // Sync feedback services with settings
+    useEffect(() => {
+        const hapticsSupported = haptic.isSupported();
+        // Enable haptics if supported and feedback is enabled
+        haptic.setEnabled(settings.enableFeedback && hapticsSupported);
+        // Enable sound if feedback is enabled AND (haptics not supported OR sound preferred)
+        // Logic: If haptics are supported, we ONLY use haptics. If not (iOS), we use sound.
+        sound.setEnabled(settings.enableFeedback && !hapticsSupported);
+    }, [settings.enableFeedback]);
 
     // --- Effects ---
 
@@ -1048,7 +1065,11 @@ export default function App() {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={handleToggleThemeMode}
+                        onClick={() => {
+                            handleToggleThemeMode();
+                            haptic.trigger('medium');
+                            sound.play('click');
+                        }}
                         className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400`}
                     >
                         {settings.darkMode ? <Sun size={20} /> : <Moon size={20} />}
@@ -1143,6 +1164,30 @@ export default function App() {
                             </button>
                         </div>
 
+                        {/* Feedback Toggle */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
+                            <div className="flex flex-col">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sounds/Haptics</span>
+                                <span className="text-[10px] text-gray-500">Vibration (Android) or Sound (iOS)</span>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setSettings({ ...settings, enableFeedback: !settings.enableFeedback });
+                                    if (!settings.enableFeedback) {
+                                        // Trigger feedback immediately to demonstrate
+                                        if (haptic.isSupported()) {
+                                            haptic.trigger('medium');
+                                        } else {
+                                            sound.play('click');
+                                        }
+                                    }
+                                }}
+                                className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableFeedback ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                            >
+                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableFeedback ? 'translate-x-6' : ''}`} />
+                            </button>
+                        </div>
+
                         <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
                             <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
                             <div className="flex flex-col gap-2">
@@ -1167,7 +1212,11 @@ export default function App() {
                     </div>
 
                     <button
-                        onClick={() => setView('generate')}
+                        onClick={() => {
+                            setView('generate');
+                            haptic.trigger('medium');
+                            sound.play('click');
+                        }}
                         className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
                     >
                         <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
@@ -1183,7 +1232,11 @@ export default function App() {
                     </button>
 
                     <button
-                        onClick={() => setView('edit')}
+                        onClick={() => {
+                            setView('edit');
+                            haptic.trigger('medium');
+                            sound.play('click');
+                        }}
                         className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
                     >
                         <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
@@ -1579,7 +1632,11 @@ export default function App() {
             {view !== 'home' && (
                 <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
                     <button
-                        onClick={handleGenerateClick}
+                        onClick={() => {
+                            handleGenerateClick();
+                            haptic.trigger('heavy');
+                            sound.play('click');
+                        }}
                         disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
                         className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
                     ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR)

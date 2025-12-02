@@ -22,13 +22,13 @@ export interface HistoryItem {
   filename: string;
   subfolder: string;
   imageType: string;
-  
+
   // Tracking input for comparison
   inputFilename?: string; // The filename of the first input image
-  
+
   // Display data (constructed at runtime)
   imageUrl: string;
-  
+
   prompt: string;
   seed: number;
   timestamp: number;
@@ -40,9 +40,9 @@ export interface LoraConfig {
   strength: number;
 }
 
-export type ThemeColor = 
-  | 'purple' | 'red' | 'yellow' | 'green' | 'cyan' | 'orange' 
-  | 'blue' | 'pink' | 'indigo' | 'teal' | 'lime' | 'rose' 
+export type ThemeColor =
+  | 'purple' | 'red' | 'yellow' | 'green' | 'cyan' | 'orange'
+  | 'blue' | 'pink' | 'indigo' | 'teal' | 'lime' | 'rose'
   | 'fuchsia' | 'sky' | 'emerald' | 'violet' | 'amber' | 'slate'
   | 'custom';
 
@@ -55,6 +55,7 @@ export interface AppSettings {
   customColor?: string; // Hex code for custom theme
   randomizeSeed: boolean;
   enableComparison: boolean;
+  enableFeedback: boolean;
 }
 
 export enum GenerationStatus {
@@ -78,15 +79,15 @@ export type ModelType = 'gguf' | 'diffusion';
 export type ImageSourceType = 'file' | 'server';
 
 export interface InputImage {
-    type: ImageSourceType;
-    file?: File;       // For local uploads
-    filename?: string; // For server-side files
-    previewUrl: string;
+  type: ImageSourceType;
+  file?: File;       // For local uploads
+  filename?: string; // For server-side files
+  previewUrl: string;
 }
 
 export interface LoraSelection {
-    id: string;
-    name: string;
-    strength: number;
-    enabled: boolean;
+  id: string;
+  name: string;
+  strength: number;
+  enabled: boolean;
 }
