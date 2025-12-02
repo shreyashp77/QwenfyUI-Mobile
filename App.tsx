@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft } from 'lucide-react';
+import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
@@ -47,10 +47,12 @@ const COLOR_HEX: Record<string, string> = {
     slate: '#64748b'
 };
 
-const RESOLUTIONS = [
-    { id: '720x1280', width: 720, height: 1280, label: '720x1280', icon: Smartphone },
-    { id: '1080x1920', width: 1080, height: 1920, label: '1080x1920', icon: Smartphone },
-    { id: '1080x2560', width: 1080, height: 2560, label: '1080x2560', icon: Smartphone }
+const ASPECT_RATIOS = [
+    { id: '1:1', width: 1024, height: 1024, label: '1:1', icon: Square },
+    { id: '9:16', width: 720, height: 1280, label: '9:16', icon: Smartphone },
+    { id: '16:9', width: 1280, height: 720, label: '16:9', icon: Monitor },
+    { id: '4:3', width: 1152, height: 864, label: '4:3', icon: Monitor },
+    { id: '3:4', width: 864, height: 1152, label: '3:4', icon: Tablet },
 ];
 
 // Helper to generate a random client ID
@@ -142,7 +144,8 @@ export default function App() {
     const [prompt, setPrompt] = useState<string>("");
     const [negativePrompt, setNegativePrompt] = useState<string>("blurry, ugly, bad quality, distortion");
     const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1000000000000));
-    const [selectedResolution, setSelectedResolution] = useState<string>(RESOLUTIONS[0].id);
+    const [promptHistory, setPromptHistory] = useState<string[]>([]);
+    const [selectedResolution, setSelectedResolution] = useState<string>('9:16');
     // Use number | string to allow empty state for inputs
     const [customDimensions, setCustomDimensions] = useState<{ width: number | string, height: number | string }>({ width: 720, height: 1280 });
 
@@ -769,7 +772,7 @@ export default function App() {
                 if (!width || width <= 0) width = 720;
                 if (!height || height <= 0) height = 1280;
             } else {
-                const resConfig = RESOLUTIONS.find(r => r.id === selectedResolution);
+                const resConfig = ASPECT_RATIOS.find(r => r.id === selectedResolution);
                 if (resConfig) {
                     width = resConfig.width;
                     height = resConfig.height;
@@ -884,6 +887,14 @@ export default function App() {
             // 4. Queue
             const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
             currentPromptIdRef.current = promptId;
+
+            // Save to Prompt History
+            if (view === 'generate' && currentPrompt.trim()) {
+                setPromptHistory(prev => {
+                    const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
+                    return newHistory;
+                });
+            }
 
             // Check if we ALREADY received the success message (race condition fix)
             if (pendingSuccessIds.current.has(promptId)) {
@@ -1238,6 +1249,22 @@ export default function App() {
                                 />
                             )}
                         </div>
+                        {/* Prompt History (Generate Mode Only) */}
+                        {view === 'generate' && promptHistory.length > 0 && (
+                            <div className="mb-2 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                                {promptHistory.map((p, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setPrompt(p)}
+                                        className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-${settings.theme}-50 dark:hover:bg-${settings.theme}-900/20 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-200 dark:hover:border-${settings.theme}-800 transition-all truncate max-w-[150px] flex items-center gap-1`}
+                                        title={p}
+                                    >
+                                        <History size={10} />
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
@@ -1330,9 +1357,9 @@ export default function App() {
 
                                 {/* Resolution Control */}
                                 <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                    <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
+                                    <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
                                     <div className="flex gap-2 flex-wrap">
-                                        {RESOLUTIONS.map(res => {
+                                        {ASPECT_RATIOS.map(res => {
                                             const Icon = res.icon;
                                             return (
                                                 <button
