@@ -1,6 +1,17 @@
 
 import { ComfyWorkflow } from "./types";
 
+export const SAMPLER_OPTIONS = [
+  "euler", "euler_ancestral", "heun", "heunpp2", "dpm_2", "dpm_2_ancestral",
+  "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
+  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu",
+  "ddpm", "lcm", "ddim", "uni_pc", "uni_pc_bh2"
+];
+
+export const SCHEDULER_OPTIONS = [
+  "normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"
+];
+
 export const BASE_WORKFLOW: ComfyWorkflow = {
   "3": {
     "inputs": {

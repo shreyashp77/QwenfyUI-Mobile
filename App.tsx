@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW } from './constants';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
 import LoraControl from './components/LoraControl';
@@ -145,6 +145,11 @@ export default function App() {
     const [selectedResolution, setSelectedResolution] = useState<string>(RESOLUTIONS[0].id);
     // Use number | string to allow empty state for inputs
     const [customDimensions, setCustomDimensions] = useState<{ width: number | string, height: number | string }>({ width: 720, height: 1280 });
+
+    // Sampler & Scheduler
+    const [selectedSampler, setSelectedSampler] = useState<string>('euler');
+    const [selectedScheduler, setSelectedScheduler] = useState<string>('simple');
+    const [steps, setSteps] = useState<number>(8);
 
     // Revised Images State (Only for Edit Mode)
     const [images, setImages] = useState<(InputImage | null)[]>([null, null, null]);
@@ -812,6 +817,8 @@ export default function App() {
                 if (missingNode) throw new Error(`Invalid Edit Workflow: Missing node ${missingNode}.`);
 
                 workflow["3"].inputs.seed = currentSeed;
+                workflow["3"].inputs.sampler_name = selectedSampler;
+                workflow["3"].inputs.scheduler = selectedScheduler;
                 workflow["113"].inputs.prompt = currentPrompt;
                 workflow["110"].inputs.model_name = selectedModel;
 
@@ -861,6 +868,9 @@ export default function App() {
                 if (missingNode) throw new Error(`Invalid Generate Workflow: Missing node ${missingNode}.`);
 
                 workflow["3"].inputs.seed = currentSeed;
+                workflow["3"].inputs.sampler_name = selectedSampler;
+                workflow["3"].inputs.scheduler = selectedScheduler;
+                workflow["3"].inputs.steps = steps;
                 workflow["6"].inputs.text = currentPrompt;
                 workflow["7"].inputs.text = negativePrompt;
 
@@ -1404,6 +1414,59 @@ export default function App() {
                                     />
                                 </div>
 
+                                {/* Steps Control (Generate Mode Only) */}
+                                {view === 'generate' && (
+                                    <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Steps</span>
+                                            <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{steps}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="50"
+                                            value={steps}
+                                            onChange={(e) => setSteps(parseInt(e.target.value))}
+                                            className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Sampler & Scheduler Control */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
+                                        <div className="relative">
+                                            <select
+                                                value={selectedSampler}
+                                                onChange={(e) => setSelectedSampler(e.target.value)}
+                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                            >
+                                                {SAMPLER_OPTIONS.map(s => (
+                                                    <option key={s} value={s}>{s}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
+                                        <div className="relative">
+                                            <select
+                                                value={selectedScheduler}
+                                                onChange={(e) => setSelectedScheduler(e.target.value)}
+                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                            >
+                                                {SCHEDULER_OPTIONS.map(s => (
+                                                    <option key={s} value={s}>{s}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* LoRAs (Only in Edit Mode) */}
                                 {view === 'edit' && (
                                     <div className="space-y-3">
@@ -1422,13 +1485,15 @@ export default function App() {
                                             />
                                         ))}
 
-                                        <button
-                                            onClick={handleAddLora}
-                                            disabled={loras.length >= 10}
-                                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                                        >
-                                            <Plus size={18} /> Add LoRA
-                                        </button>
+                                        {settings.enableRemoteInput && (
+                                            <button
+                                                onClick={handleAddLora}
+                                                disabled={loras.length >= 10}
+                                                className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                                            >
+                                                <Plus size={18} /> Add LoRA
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
