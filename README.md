@@ -23,6 +23,7 @@ A modern, feature-rich, mobile-first web frontend for ComfyUI. This application 
 - **Dark/Light Mode**: Fully supported theme switching for any lighting condition.
 - **Custom Themes**: Choose from 17 preset accent colors or use the **Color Picker** to match your exact style.
 - **Animations**: Smooth transitions, loading states, and modal reveals.
+- **Smart Feedback**: Unified **Sounds/Haptics** system that provides vibration feedback on Android and subtle sound effects on iOS (toggleable).
 
 ### 🖼️ Advanced Image Handling
 - **"Before vs After" Slider**: Interactive comparison slider to visualize edit results against the original input (Toggleable in Settings).
