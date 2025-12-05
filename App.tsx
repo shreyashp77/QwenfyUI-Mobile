@@ -176,7 +176,7 @@ export default function App() {
 
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
-    const [videoLength, setVideoLength] = useState(49);
+    const [videoDuration, setVideoDuration] = useState(3);
     const [videoResolution, setVideoResolution] = useState('480x832');
 
     // Execution
@@ -954,7 +954,8 @@ export default function App() {
                 }
 
                 // Length
-                workflow["50"].inputs.length = videoLength;
+                // Length
+                workflow["50"].inputs.length = 16 * videoDuration + 1;
 
                 // Seed
                 workflow["57"].inputs.noise_seed = currentSeed;
@@ -1613,15 +1614,25 @@ export default function App() {
                                         {/* Length Control */}
                                         <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
                                             <div className="flex justify-between items-center mb-2">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Frames)</span>
-                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoLength}</span>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Seconds)</span>
+                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoDuration}s</span>
                                             </div>
                                             <input
-                                                type="number"
-                                                value={videoLength}
-                                                onChange={(e) => setVideoLength(parseInt(e.target.value) || 49)}
-                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                                type="range"
+                                                min="1"
+                                                max="5"
+                                                step="1"
+                                                value={videoDuration}
+                                                onChange={(e) => setVideoDuration(parseInt(e.target.value))}
+                                                className={`w-full accent-${settings.theme}-600 cursor-pointer`}
                                             />
+                                            <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                                                <span>1s</span>
+                                                <span>2s</span>
+                                                <span>3s</span>
+                                                <span>4s</span>
+                                                <span>5s</span>
+                                            </div>
                                         </div>
 
                                         {/* Extend Toggle */}
