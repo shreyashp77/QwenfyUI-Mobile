@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { HistoryItem, ThemeColor } from '../types';
-import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2 } from 'lucide-react';
+import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2, Monitor } from 'lucide-react';
 import CompareModal from './CompareModal';
 
 interface HistoryGalleryProps {
     history: HistoryItem[];
     onSelect: (item: HistoryItem) => void;
+    onSelectVideo?: (item: HistoryItem) => void;
     onClose: () => void;
     onDelete: (filename: string) => void;
     nsfwMode: boolean;
@@ -60,7 +61,7 @@ const HistoryThumbnail: React.FC<{
     );
 };
 
-const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onClose, onDelete, nsfwMode, theme, serverAddress }) => {
+const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSelectVideo, onClose, onDelete, nsfwMode, theme, serverAddress }) => {
     const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const [previewRevealed, setPreviewRevealed] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -395,15 +396,40 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                                     </div>
                                 )}
 
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onSelect(history[previewIndex]);
-                                    }}
-                                    className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
-                                >
-                                    Use as Input <ArrowUpRight size={18} />
-                                </button>
+                                {history[previewIndex].imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                    <a
+                                        href={history[previewIndex].imageUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                    >
+                                        Open in New Tab <ExternalLink size={18} />
+                                    </a>
+                                ) : (
+                                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 w-full justify-center px-4">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onSelect(history[previewIndex]);
+                                            }}
+                                            className={`flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                        >
+                                            Use as Input <ArrowUpRight size={18} />
+                                        </button>
+                                        {onSelectVideo && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSelectVideo(history[previewIndex]);
+                                                }}
+                                                className={`flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                            >
+                                                Use for Video <Monitor size={18} />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
 
                                 <button
                                     onClick={(e) => {
@@ -418,24 +444,26 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                                 </button>
                             </>
                         )}
-                    </div>
-                </div>
+                    </div >
+                </div >
             )}
 
             {/* Comparison Modal */}
-            {comparingItem && comparingItem.inputFilename && (
-                <CompareModal
-                    resultImage={comparingItem.imageUrl}
-                    inputImage={`${serverAddress}/view?filename=${encodeURIComponent(comparingItem.inputFilename)}&type=input`}
-                    onClose={() => setComparingItem(null)}
-                    onUseResult={() => {
-                        onSelect(comparingItem);
-                        setComparingItem(null);
-                    }}
-                    nsfwMode={nsfwMode}
-                    theme={theme}
-                />
-            )}
+            {
+                comparingItem && comparingItem.inputFilename && (
+                    <CompareModal
+                        resultImage={comparingItem.imageUrl}
+                        inputImage={`${serverAddress}/view?filename=${encodeURIComponent(comparingItem.inputFilename)}&type=input`}
+                        onClose={() => setComparingItem(null)}
+                        onUseResult={() => {
+                            onSelect(comparingItem);
+                            setComparingItem(null);
+                        }}
+                        nsfwMode={nsfwMode}
+                        theme={theme}
+                    />
+                )
+            }
         </>
     );
 };

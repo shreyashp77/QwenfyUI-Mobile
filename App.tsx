@@ -573,10 +573,10 @@ export default function App() {
 
     const randomizeSeed = () => setSeed(Math.floor(Math.random() * 1000000000000));
 
-    const handleHistorySelect = async (item: HistoryItem) => {
+    const handleHistorySelect = async (item: HistoryItem, targetView: 'edit' | 'video' = 'edit') => {
         // Switch to the mode that created this item, if we can infer it, or stay in edit
         // For now, if we use as input, we likely want to Edit it.
-        if (view !== 'edit') setView('edit');
+        if (view !== targetView) setView(targetView);
 
         try {
             const res = await fetch(item.imageUrl);
@@ -701,6 +701,20 @@ export default function App() {
                     setHistory(prev => prev.filter(item => item.filename !== filename));
                     setToastMessage("Image deleted 🗑️");
                     setTimeout(() => setToastMessage(null), 3000);
+
+                    // If it was a video, also try to delete the corresponding thumbnail
+                    if (filename.match(/\.(mp4|webm|mov)$/i)) {
+                        const thumbFilename = filename.replace(/\.(mp4|webm|mov)$/i, ".png");
+                        try {
+                            await fetch('/api/delete-image', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ filename: thumbFilename })
+                            });
+                        } catch (e) {
+                            console.warn("Failed to delete thumbnail", e);
+                        }
+                    }
 
                     // If we deleted the last generated image, clear the preview
                     if (lastGeneratedImage && lastGeneratedImage.includes(filename)) {
@@ -1758,39 +1772,41 @@ export default function App() {
                                 )}
 
                                 {/* Sampler & Scheduler Control */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedSampler}
-                                                onChange={(e) => setSelectedSampler(e.target.value)}
-                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                            >
-                                                {SAMPLER_OPTIONS.map(s => (
-                                                    <option key={s} value={s}>{s}</option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                {view !== 'video' && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={selectedSampler}
+                                                    onChange={(e) => setSelectedSampler(e.target.value)}
+                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                                >
+                                                    {SAMPLER_OPTIONS.map(s => (
+                                                        <option key={s} value={s}>{s}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
-                                        <div className="relative">
-                                            <select
-                                                value={selectedScheduler}
-                                                onChange={(e) => setSelectedScheduler(e.target.value)}
-                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                            >
-                                                {SCHEDULER_OPTIONS.map(s => (
-                                                    <option key={s} value={s}>{s}</option>
-                                                ))}
-                                            </select>
-                                            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={selectedScheduler}
+                                                    onChange={(e) => setSelectedScheduler(e.target.value)}
+                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                                >
+                                                    {SCHEDULER_OPTIONS.map(s => (
+                                                        <option key={s} value={s}>{s}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* LoRAs (Only in Edit Mode) */}
                                 {view === 'edit' && (
@@ -1907,14 +1923,12 @@ export default function App() {
                     )}
                 </div>
             )}
-
-
-
             {/* History Modal */}
             {showHistory && (
                 <HistoryGallery
                     history={history}
-                    onSelect={handleHistorySelect}
+                    onSelect={(item) => handleHistorySelect(item, 'edit')}
+                    onSelectVideo={(item) => handleHistorySelect(item, 'video')}
                     onClose={() => setShowHistory(false)}
                     onDelete={handleDeleteImage}
                     nsfwMode={settings.nsfwMode}
