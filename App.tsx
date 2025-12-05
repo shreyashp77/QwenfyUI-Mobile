@@ -200,6 +200,8 @@ export default function App() {
     const executingPromptRef = useRef<string>("");
     const executingSeedRef = useRef<number>(0);
     const executingInputFilenameRef = useRef<string | undefined>(undefined); // Track input image for history comparison
+    const executionPhaseRef = useRef<number>(0);
+    const lastProgressValueRef = useRef<number>(0);
     const startTimeRef = useRef<number>(0);
     const wsRef = useRef<WebSocket | null>(null);
 
@@ -281,7 +283,7 @@ export default function App() {
 
     // Polling fallback for flaky WS or missed messages
     useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
+        let interval: any;
         if (status === GenerationStatus.QUEUED || status === GenerationStatus.EXECUTING) {
             interval = setInterval(async () => {
                 if (currentPromptIdRef.current) {
@@ -368,6 +370,9 @@ export default function App() {
                             setStatus(GenerationStatus.EXECUTING);
                             setStatusMessage("Loading Model...");
                             setProgress(0);
+                            // Reset progress tracking
+                            executionPhaseRef.current = 0;
+                            lastProgressValueRef.current = 0;
                         }
                     } else if (msg.type === 'executing') {
                         // Node execution started
@@ -386,15 +391,30 @@ export default function App() {
                                 setStatusMessage("Saving...");
                                 setProgress(99);
                             }
-                            // We DO NOT blindly increment progress here anymore to avoid fluctuation.
-                            // Progress is strictly controlled by 'progress' events or specific node milestones.
                         }
                     } else if (msg.type === 'progress') {
                         if (msg.data.prompt_id === activePromptId) {
                             const { value, max } = msg.data;
-                            const percentage = Math.floor((value / max) * 100);
-                            setProgress(percentage);
-                            // Ensure status says generating when actual progress events come in
+                            let percentage = Math.floor((value / max) * 100);
+
+                            // Special handling for Video generation (2-phase process)
+                            if (viewRef.current === 'video') {
+                                // Detect phase reset (current value less than last value)
+                                if (value < lastProgressValueRef.current) {
+                                    executionPhaseRef.current++;
+                                }
+                                lastProgressValueRef.current = value;
+
+                                // Calculate 2-phase progress (0-50%, 50-100%)
+                                const phase = executionPhaseRef.current;
+                                if (phase <= 1) {
+                                    percentage = Math.floor((phase * 50) + ((value / max) * 50));
+                                } else {
+                                    percentage = 99;
+                                }
+                            }
+
+                            setProgress(prev => Math.max(prev, percentage));
                             setStatusMessage("Generating...");
                         }
                     } else if (msg.type === 'execution_success') {
