@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, ArrowUpRight, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES } from './constants';
+import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES, VIDEO_RESOLUTIONS } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
 import LoraControl from './components/LoraControl';
@@ -20,7 +20,7 @@ const DEFAULT_SERVER = `http://${getHostname()}:8188`;
 // Using specific model name to prevent KeyError: 'weight' in Nunchaku node if fetch fails
 const DEFAULT_MODEL = "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors";
 
-type ViewMode = 'home' | 'edit' | 'generate';
+type ViewMode = 'home' | 'edit' | 'generate' | 'video';
 
 const THEME_OPTIONS: ThemeColor[] = [
     'purple', 'violet', 'fuchsia', 'pink', 'rose', 'red',
@@ -173,6 +173,11 @@ export default function App() {
     const [availableLoras, setAvailableLoras] = useState<string[]>([]);
     const [showLoraConfig, setShowLoraConfig] = useState(false);
     const [loras, setLoras] = useState<LoraSelection[]>([]); // Dynamic LoRA list
+
+    // Video Generation State
+    const [extendVideo, setExtendVideo] = useState(false);
+    const [videoLength, setVideoLength] = useState(49);
+    const [videoResolution, setVideoResolution] = useState('480x832');
 
     // Execution
     const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
@@ -597,12 +602,21 @@ export default function App() {
         setShowHistory(!showHistory);
     };
 
-    const handleUseResult = async () => {
+    const handleUseResult = async (targetView: 'edit' | 'video' = 'edit') => {
         if (!lastGeneratedImage) return;
         try {
             const response = await fetch(lastGeneratedImage);
             if (!response.ok) throw new Error("File missing");
             const blob = await response.blob();
+
+            // If it's a video, we can't use it as input for edit/video (yet) unless we extract a frame
+            // But the requirement says "when an image is generated... use as input for video generation"
+            // So we assume the result is an image.
+            if (blob.type.startsWith('video')) {
+                setErrorMsg("Cannot use video as input.");
+                return;
+            }
+
             const file = new File([blob], `generated_${Date.now()}.png`, { type: "image/png" });
 
             // Free memory on server to prevent OOM when switching models
@@ -611,8 +625,8 @@ export default function App() {
             // Add a small delay to ensure backend cleans up fully
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Auto-switch to edit mode to refine the result
-            setView('edit');
+            // Auto-switch to target mode
+            setView(targetView);
             handleFileSelect(0, file);
 
             setShowResultPreview(false);
@@ -903,8 +917,55 @@ export default function App() {
                 workflow["13"].inputs.width = width;
                 workflow["13"].inputs.height = height;
 
-                // Note: Generate workflow currently has hardcoded Model/CLIP/VAE in constants.ts
-                // We can expose these later if needed, but for now we follow the user's JSON.
+            } else if (view === 'video') {
+                // --- VIDEO MODE LOGIC ---
+                if (!images[0] || (images[0].type === 'file' && !images[0].file) || (images[0].type === 'server' && !images[0].filename)) {
+                    setErrorMsg("Please select an input image.");
+                    setStatus(GenerationStatus.IDLE);
+                    setStatusMessage("");
+                    return;
+                }
+
+                // Upload Image if needed
+                let filename = "";
+                if (images[0].type === 'file' && images[0].file) {
+                    filename = await uploadImage(images[0].file, settings.serverAddress, true);
+                } else if (images[0].type === 'server' && images[0].filename) {
+                    filename = images[0].filename;
+                }
+                executingInputFilenameRef.current = filename;
+
+                setStatus(GenerationStatus.QUEUED);
+                setStatusMessage("Queued...");
+                workflow = JSON.parse(JSON.stringify(VIDEO_WORKFLOW));
+
+                const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "52", "57", "58", "61", "62", "63", "64", "66", "67", "68"]);
+                if (missingNode) throw new Error(`Invalid Video Workflow: Missing node ${missingNode}.`);
+
+                // Inputs
+                workflow["52"].inputs.image = filename;
+                workflow["6"].inputs.text = currentPrompt;
+
+                // Resolution
+                const resConfig = VIDEO_RESOLUTIONS.find(r => r.id === videoResolution);
+                if (resConfig) {
+                    workflow["50"].inputs.width = resConfig.width;
+                    workflow["50"].inputs.height = resConfig.height;
+                }
+
+                // Length
+                workflow["50"].inputs.length = videoLength;
+
+                // Seed
+                workflow["57"].inputs.noise_seed = currentSeed;
+
+                // Extend Logic
+                if (!extendVideo) {
+                    // Disable RIFE and second Video Combine by removing them or disconnecting
+                    // The easiest way is to remove them and ensure nothing depends on them (nothing does)
+                    delete workflow["82"];
+                    delete workflow["83"];
+                }
             }
 
             // 4. Queue
@@ -962,20 +1023,37 @@ export default function App() {
 
             const outputs = promptHistory.outputs;
 
+            // Helper to get output files (images or gifs)
+            const getOutputFiles = (nodeOutput: any) => {
+                if (!nodeOutput) return [];
+                return nodeOutput.images || nodeOutput.gifs || [];
+            };
+
             // Determine output node based on viewRef to avoid stale closures in WebSocket callback
             let outputNodeId = viewRef.current === 'generate' ? "9" : "79";
 
+            if (viewRef.current === 'video') {
+                // If extendVideo is true (we can't easily check state inside async callback without ref, 
+                // but we can check if node 82 exists in outputs)
+                if (outputs["82"] && getOutputFiles(outputs["82"]).length > 0) {
+                    outputNodeId = "82";
+                } else {
+                    outputNodeId = "63";
+                }
+            }
+
             // Robust fallback: If the expected node ID has no images, search for ANY node with images.
             // This handles cases where node IDs shift or where the view state might still be mismatched.
-            if (!outputs[outputNodeId] || !outputs[outputNodeId].images || outputs[outputNodeId].images.length === 0) {
-                const foundNodeId = Object.keys(outputs).find(key => outputs[key].images && outputs[key].images.length > 0);
+            if (getOutputFiles(outputs[outputNodeId]).length === 0) {
+                const foundNodeId = Object.keys(outputs).find(key => getOutputFiles(outputs[key]).length > 0);
                 if (foundNodeId) {
                     outputNodeId = foundNodeId;
                 }
             }
 
-            if (outputs && outputs[outputNodeId] && outputs[outputNodeId].images && outputs[outputNodeId].images.length > 0) {
-                const imgInfo = outputs[outputNodeId].images[0];
+            const outputFiles = getOutputFiles(outputs[outputNodeId]);
+            if (outputFiles.length > 0) {
+                const imgInfo = outputFiles[0];
 
                 const imageUrl = `${settings.serverAddress}/view?filename=${encodeURIComponent(imgInfo.filename)}&type=${imgInfo.type}&subfolder=${encodeURIComponent(imgInfo.subfolder || '')}&t=${Date.now()}`;
 
@@ -1250,6 +1328,26 @@ export default function App() {
                             <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Modify existing images with Qwen Image Edit.</p>
                         </div>
                     </button>
+
+                    <button
+                        onClick={() => {
+                            setView('video');
+                            haptic.trigger('medium');
+                            sound.play('click');
+                        }}
+                        className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
+                    >
+                        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                            <Monitor size={100} />
+                        </div>
+                        <div className="relative z-10 flex flex-col items-start">
+                            <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                                <Monitor size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Video</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan2.1 Video Generation.</p>
+                        </div>
+                    </button>
                 </main>
             ) : (
                 <main className="p-4 space-y-6 pb-24">
@@ -1295,6 +1393,23 @@ export default function App() {
                         </>
                     )}
 
+                    {/* VIDEO MODE: Image Input */}
+                    {view === 'video' && (
+                        <div className="grid grid-cols-1 gap-3">
+                            <ImageInput
+                                index={0}
+                                image={images[0]}
+                                disabled={false}
+                                onFileSelect={handleFileSelect}
+                                onServerSelectRequest={openServerSelector}
+                                onUpload={handleUploadToServer}
+                                onClear={handleClearImage}
+                                theme={settings.theme}
+                                allowRemote={settings.enableRemoteInput}
+                            />
+                        </div>
+                    )}
+
                     {/* Prompt Input (Common) */}
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
 
@@ -1330,7 +1445,7 @@ export default function App() {
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            placeholder={view === 'edit' ? "Describe your edit..." : "Describe the image you want to generate..."}
+                            placeholder={view === 'edit' ? "Describe your edit..." : view === 'video' ? "Describe the video you want to generate..." : "Describe the image you want to generate..."}
                             className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
                         />
                         <div className="flex justify-end mt-2">
@@ -1402,28 +1517,49 @@ export default function App() {
                                     >
                                         <ExternalLink size={14} />
                                     </a>
-                                    <button onClick={handleUseResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Input">
-                                        <ArrowUpRight size={14} />
-                                    </button>
+                                    {/* Only show "Use as Input" buttons if it's an image */}
+                                    {!lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
+                                        <>
+                                            <button onClick={() => handleUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
+                                                <PenTool size={14} />
+                                            </button>
+                                            <button onClick={() => handleUseResult('video')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Video Input">
+                                                <Monitor size={14} />
+                                            </button>
+                                        </>
+                                    )}
                                     <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
                                         <X size={14} />
                                     </button>
                                 </div>
                             </div>
                             <div className="relative h-64 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
-                                <img
-                                    src={lastGeneratedImage}
-                                    className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
-                                    alt="Result"
-                                />
-                                {settings.nsfwMode && !resultRevealed && (
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
-                                    </div>
+                                {lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                    <video
+                                        src={lastGeneratedImage}
+                                        className="w-full h-full object-contain"
+                                        controls
+                                        autoPlay
+                                        loop
+                                        muted
+                                    />
+                                ) : (
+                                    <>
+                                        <img
+                                            src={lastGeneratedImage}
+                                            className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
+                                            alt="Result"
+                                        />
+                                        {settings.nsfwMode && !resultRevealed && (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors pointer-events-none">
+                                            <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
+                                        </div>
+                                    </>
                                 )}
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors">
-                                    <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
-                                </div>
 
                                 {/* Duration Badge */}
                                 {lastGenerationDuration > 0 && (
@@ -1452,63 +1588,117 @@ export default function App() {
                         {showLoraConfig && (
                             <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
 
-                                {/* Resolution Control */}
-                                <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                    <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
-                                    <div className="flex gap-2 flex-wrap">
-                                        {ASPECT_RATIOS.map(res => {
-                                            const Icon = res.icon;
-                                            return (
-                                                <button
-                                                    key={res.id}
-                                                    onClick={() => setSelectedResolution(res.id)}
-                                                    className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === res.id
-                                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                        }`}
-                                                >
-                                                    <Icon size={12} className="hidden sm:block" />
-                                                    {res.label}
-                                                </button>
-                                            );
-                                        })}
-                                        {/* Custom Button */}
-                                        <button
-                                            onClick={() => setSelectedResolution('custom')}
-                                            className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === 'custom'
-                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                }`}
-                                        >
-                                            <Monitor size={12} className="hidden sm:block" />
-                                            Custom
-                                        </button>
-                                    </div>
-
-                                    {selectedResolution === 'custom' && (
-                                        <div className="flex gap-3 mt-3 animate-fade-in">
-                                            <div className="flex-1">
-                                                <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
-                                                <input
-                                                    type="number"
-                                                    value={customDimensions.width}
-                                                    onChange={(e) => setCustomDimensions(prev => ({ ...prev, width: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                />
-                                            </div>
-                                            <div className="flex items-end pb-2 text-gray-400">x</div>
-                                            <div className="flex-1">
-                                                <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
-                                                <input
-                                                    type="number"
-                                                    value={customDimensions.height}
-                                                    onChange={(e) => setCustomDimensions(prev => ({ ...prev, height: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                />
+                                {/* VIDEO MODE: Advanced Options */}
+                                {view === 'video' && (
+                                    <>
+                                        {/* Resolution Control */}
+                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {VIDEO_RESOLUTIONS.map(res => (
+                                                    <button
+                                                        key={res.id}
+                                                        onClick={() => setVideoResolution(res.id)}
+                                                        className={`py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${videoResolution === res.id
+                                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                            }`}
+                                                    >
+                                                        {res.label}
+                                                    </button>
+                                                ))}
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+
+                                        {/* Length Control */}
+                                        <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Frames)</span>
+                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoLength}</span>
+                                            </div>
+                                            <input
+                                                type="number"
+                                                value={videoLength}
+                                                onChange={(e) => setVideoLength(parseInt(e.target.value) || 49)}
+                                                className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                            />
+                                        </div>
+
+                                        {/* Extend Toggle */}
+                                        <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Extend Video</span>
+                                                <span className="text-[10px] text-gray-500">Enable RIFE VFI interpolation</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setExtendVideo(!extendVideo)}
+                                                className={`w-12 h-6 rounded-full relative transition-colors ${extendVideo ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                            >
+                                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${extendVideo ? 'translate-x-6' : ''}`} />
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Resolution Control (Generate/Edit) */}
+                                {view !== 'video' && (
+                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                        <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
+                                        <div className="flex gap-2 flex-wrap">
+                                            {ASPECT_RATIOS.map(res => {
+                                                const Icon = res.icon;
+                                                return (
+                                                    <button
+                                                        key={res.id}
+                                                        onClick={() => setSelectedResolution(res.id)}
+                                                        className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === res.id
+                                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                            }`}
+                                                    >
+                                                        <Icon size={12} className="hidden sm:block" />
+                                                        {res.label}
+                                                    </button>
+                                                );
+                                            })}
+                                            {/* Custom Button */}
+                                            <button
+                                                onClick={() => setSelectedResolution('custom')}
+                                                className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === 'custom'
+                                                    ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                    : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                    }`}
+                                            >
+                                                <Monitor size={12} className="hidden sm:block" />
+                                                Custom
+                                            </button>
+                                        </div>
+
+                                        {selectedResolution === 'custom' && (
+                                            <div className="flex gap-3 mt-3 animate-fade-in">
+                                                <div className="flex-1">
+                                                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
+                                                    <input
+                                                        type="number"
+                                                        value={customDimensions.width}
+                                                        onChange={(e) => setCustomDimensions(prev => ({ ...prev, width: e.target.value === '' ? '' : parseInt(e.target.value) }))}
+                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                                    />
+                                                </div>
+                                                <div className="flex items-end pb-2 text-gray-400">x</div>
+                                                <div className="flex-1">
+                                                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
+                                                    <input
+                                                        type="number"
+                                                        value={customDimensions.height}
+                                                        onChange={(e) => setCustomDimensions(prev => ({ ...prev, height: e.target.value === '' ? '' : parseInt(e.target.value) }))}
+                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Seed Control */}
                                 <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">

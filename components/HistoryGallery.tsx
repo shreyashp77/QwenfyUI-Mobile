@@ -21,6 +21,7 @@ const HistoryThumbnail: React.FC<{
     onClick: () => void;
 }> = ({ item, nsfwMode, onClick }) => {
     const [hasError, setHasError] = useState(false);
+    const isVideo = item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i);
 
     if (hasError) {
         return (
@@ -31,6 +32,21 @@ const HistoryThumbnail: React.FC<{
                 <FileWarning size={32} className="mb-2 opacity-50 text-red-500 dark:text-red-400" />
                 <span className="text-xs font-mono">File Missing</span>
             </div>
+        );
+    }
+
+    if (isVideo) {
+        return (
+            <video
+                src={item.imageUrl}
+                className="w-full h-full object-cover"
+                muted
+                loop
+                playsInline
+                onMouseOver={(e) => e.currentTarget.play()}
+                onMouseOut={(e) => e.currentTarget.pause()}
+                onError={() => setHasError(true)}
+            />
         );
     }
 
@@ -347,17 +363,28 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onCl
                         {previewError ? (
                             <div className="flex flex-col items-center justify-center text-gray-500 p-8 bg-gray-100 dark:bg-gray-900 rounded-xl">
                                 <ImageOff size={64} className="mb-4 opacity-50 text-red-500" />
-                                <p className="text-xl font-semibold mb-2">Image Not Found</p>
+                                <p className="text-xl font-semibold mb-2">File Not Found</p>
                                 <p className="text-sm">The file may have been deleted from the server.</p>
                             </div>
                         ) : (
                             <>
-                                <img
-                                    src={history[previewIndex].imageUrl}
-                                    alt="Preview"
-                                    onError={() => setPreviewError(true)}
-                                    className={`max-w-full max-h-[90vh] object-contain transition-all duration-500 ${nsfwMode && !previewRevealed ? 'blur-2xl' : 'blur-0'}`}
-                                />
+                                {history[previewIndex].imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                    <video
+                                        src={history[previewIndex].imageUrl}
+                                        controls
+                                        autoPlay
+                                        loop
+                                        className="max-w-full max-h-[90vh] object-contain"
+                                        onError={() => setPreviewError(true)}
+                                    />
+                                ) : (
+                                    <img
+                                        src={history[previewIndex].imageUrl}
+                                        alt="Preview"
+                                        onError={() => setPreviewError(true)}
+                                        className={`max-w-full max-h-[90vh] object-contain transition-all duration-500 ${nsfwMode && !previewRevealed ? 'blur-2xl' : 'blur-0'}`}
+                                    />
+                                )}
 
                                 {nsfwMode && !previewRevealed && (
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
