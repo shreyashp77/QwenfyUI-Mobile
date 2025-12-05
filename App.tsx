@@ -583,7 +583,7 @@ export default function App() {
             const res = await fetch(item.imageUrl);
             if (!res.ok) throw new Error("Failed to fetch image from history");
             const blob = await res.blob();
-            const file = new File([blob], "from_history.png", { type: "image/png" });
+            const file = new File([blob], `history_${Date.now()}.png`, { type: "image/png" });
 
             // Pass true for isTemporary to mark this as a temporary input
             handleFileSelect(0, file, true);
@@ -631,7 +631,7 @@ export default function App() {
 
             // Auto-switch to target mode
             setView(targetView);
-            handleFileSelect(0, file);
+            handleFileSelect(0, file, true);
 
             setShowResultPreview(false);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -954,6 +954,7 @@ export default function App() {
                 let filename = "";
                 if (images[0].type === 'file' && images[0].file) {
                     filename = await uploadImage(images[0].file, settings.serverAddress, true);
+                    console.log("Uploaded video input:", filename, "isTemporary:", images[0].isTemporary);
                     if (images[0].isTemporary) {
                         tempInputFiles.push(filename);
                     }
@@ -1038,16 +1039,45 @@ export default function App() {
             // Cleanup temporary input images
             if (tempInputFiles.length > 0) {
                 console.log("Cleaning up temporary input images:", tempInputFiles);
+
+                // Helper to wait
+                const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
                 for (const filename of tempInputFiles) {
-                    try {
-                        await fetch(`${settings.serverAddress}/api/delete-input-image`, {
-                            method: 'POST',
-                            body: JSON.stringify({ filename })
-                        });
-                    } catch (e) {
-                        console.error("Failed to delete temporary input image:", filename, e);
+                    let deleted = false;
+                    const maxRetries = 5;
+
+                    for (let i = 0; i < maxRetries; i++) {
+                        try {
+                            const res = await fetch(`/api/delete-input-image`, {
+                                method: 'POST',
+                                body: JSON.stringify({ filename })
+                            });
+                            const data = await res.json();
+
+                            if (data.success) {
+                                console.log(`Deleted ${filename} successfully.`);
+                                deleted = true;
+                                break;
+                            } else {
+                                console.warn(`Attempt ${i + 1} failed to delete ${filename}:`, data.error);
+                            }
+                        } catch (e) {
+                            console.warn(`Attempt ${i + 1} error deleting ${filename}:`, e);
+                        }
+
+                        // Wait before retry, increasing delay slightly
+                        if (i < maxRetries - 1) {
+                            await delay(1000 * (i + 1));
+                        }
+                    }
+
+                    if (!deleted) {
+                        console.error(`Failed to delete ${filename} after ${maxRetries} attempts.`);
                     }
                 }
+            } else {
+                console.log("No temporary input images to clean up.");
             }
         }
     };

@@ -119,6 +119,11 @@ export default defineConfig(({ mode }) => {
                   const inputDir = path.resolve(process.cwd(), '../ComfyUI/input');
                   const filePath = path.join(inputDir, filename);
 
+                  console.log(`[Delete Input Image] Request for: ${filename}`);
+                  console.log(`[Delete Input Image] CWD: ${process.cwd()}`);
+                  console.log(`[Delete Input Image] Resolved Input Dir: ${inputDir}`);
+                  console.log(`[Delete Input Image] Target Path: ${filePath}`);
+
                   // Security check: Ensure the resolved path is still within the input directory
                   if (!filePath.startsWith(inputDir)) {
                     res.statusCode = 403;
@@ -130,11 +135,11 @@ export default defineConfig(({ mode }) => {
                     fs.unlinkSync(filePath);
                     console.log(`[Delete Input Image] Deleted file: ${filePath}`);
                     res.statusCode = 200;
-                    res.end(JSON.stringify({ success: true }));
+                    res.end(JSON.stringify({ success: true, debug: { inputDir, filePath, deleted: true } }));
                   } else {
                     console.log(`[Delete Input Image] File not found: ${filePath}`);
                     res.statusCode = 200;
-                    res.end(JSON.stringify({ success: true, message: 'File not found, but treated as success' }));
+                    res.end(JSON.stringify({ success: true, message: 'File not found, but treated as success', debug: { inputDir, filePath, exists: false } }));
                   }
                 } catch (error) {
                   console.error('[Delete Input Image] Error:', error);
