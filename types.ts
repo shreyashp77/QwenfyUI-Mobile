@@ -83,6 +83,7 @@ export interface InputImage {
   file?: File;       // For local uploads
   filename?: string; // For server-side files
   previewUrl: string;
+  isTemporary?: boolean;
 }
 
 export interface LoraSelection {

@@ -97,6 +97,55 @@ export default defineConfig(({ mode }) => {
               next();
             }
           });
+
+          server.middlewares.use('/api/delete-input-image', async (req, res, next) => {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => {
+                body += chunk.toString();
+              });
+              req.on('end', async () => {
+                try {
+                  const { filename } = JSON.parse(body);
+                  if (!filename) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Filename is required' }));
+                    return;
+                  }
+
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  // Resolve path relative to project root: ../ComfyUI/input
+                  const inputDir = path.resolve(process.cwd(), '../ComfyUI/input');
+                  const filePath = path.join(inputDir, filename);
+
+                  // Security check: Ensure the resolved path is still within the input directory
+                  if (!filePath.startsWith(inputDir)) {
+                    res.statusCode = 403;
+                    res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
+                    return;
+                  }
+
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[Delete Input Image] Deleted file: ${filePath}`);
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ success: true }));
+                  } else {
+                    console.log(`[Delete Input Image] File not found: ${filePath}`);
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ success: true, message: 'File not found, but treated as success' }));
+                  }
+                } catch (error) {
+                  console.error('[Delete Input Image] Error:', error);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ success: false, error: String(error) }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
         }
       }
     ],

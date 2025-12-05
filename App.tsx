@@ -444,7 +444,7 @@ export default function App() {
         });
     };
 
-    const handleFileSelect = React.useCallback(async (index: number, file: File | null) => {
+    const handleFileSelect = React.useCallback(async (index: number, file: File | null, isTemporary: boolean = false) => {
         if (file) {
             let processedFile = file;
 
@@ -480,7 +480,8 @@ export default function App() {
                 newImages[index] = {
                     type: 'file',
                     file: processedFile,
-                    previewUrl: URL.createObjectURL(processedFile)
+                    previewUrl: URL.createObjectURL(processedFile),
+                    isTemporary: isTemporary
                 };
                 return newImages;
             });
@@ -580,18 +581,21 @@ export default function App() {
 
         try {
             const res = await fetch(item.imageUrl);
-            if (!res.ok) {
-                throw new Error("File not found on server");
-            }
+            if (!res.ok) throw new Error("Failed to fetch image from history");
             const blob = await res.blob();
             const file = new File([blob], "from_history.png", { type: "image/png" });
-            handleFileSelect(0, file);
+
+            // Pass true for isTemporary to mark this as a temporary input
+            handleFileSelect(0, file, true);
+
             setPrompt(item.prompt);
+            if (item.seed) setSeed(item.seed);
+
             setShowHistory(false);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (e) {
-            console.error("Failed to load history image", e);
-            setErrorMsg("Failed to load image: The file may have been deleted from the server.");
+            console.error("Failed to load history item", e);
+            setErrorMsg("Failed to load image from history.");
         }
     };
 
@@ -764,7 +768,6 @@ export default function App() {
         }
         return null;
     };
-
     const handleGenerateClick = () => {
         executeGeneration();
     }
@@ -803,6 +806,9 @@ export default function App() {
         setProgress(0);
         setLastGeneratedImage(null);
         setResultRevealed(false);
+
+        // Track temporary files for cleanup
+        const tempInputFiles: string[] = [];
 
         try {
             let workflow: any;
@@ -848,7 +854,11 @@ export default function App() {
                     const img = images[i];
                     if (img) {
                         if (img.type === 'file' && img.file) {
-                            finalFilenames[i] = await uploadImage(img.file, settings.serverAddress, true);
+                            const filename = await uploadImage(img.file, settings.serverAddress, true);
+                            finalFilenames[i] = filename;
+                            if (img.isTemporary) {
+                                tempInputFiles.push(filename);
+                            }
                         } else if (img.type === 'server' && img.filename) {
                             finalFilenames[i] = img.filename;
                         }
@@ -944,6 +954,9 @@ export default function App() {
                 let filename = "";
                 if (images[0].type === 'file' && images[0].file) {
                     filename = await uploadImage(images[0].file, settings.serverAddress, true);
+                    if (images[0].isTemporary) {
+                        tempInputFiles.push(filename);
+                    }
                 } else if (images[0].type === 'server' && images[0].filename) {
                     filename = images[0].filename;
                 }
@@ -968,7 +981,6 @@ export default function App() {
                 }
 
                 // Length
-                // Length
                 workflow["50"].inputs.length = 16 * videoDuration + 1;
 
                 // Seed
@@ -977,7 +989,6 @@ export default function App() {
                 // Extend Logic
                 if (!extendVideo) {
                     // Disable RIFE and second Video Combine by removing them or disconnecting
-                    // The easiest way is to remove them and ensure nothing depends on them (nothing does)
                     delete workflow["82"];
                     delete workflow["83"];
                 }
@@ -1002,20 +1013,20 @@ export default function App() {
                 setProgress(100);
                 fetchGenerationResult(promptId);
                 pendingSuccessIds.current.delete(promptId);
-                return;
-            }
-
-            // Check history immediately in case it was cached
-            try {
-                const historyData = await getHistory(promptId, settings.serverAddress);
-                if (historyData && historyData[promptId]) {
-                    setStatus(GenerationStatus.FINISHED);
-                    setStatusMessage("Finished");
-                    setProgress(100);
-                    fetchGenerationResult(promptId);
+                // Don't return here, we still want cleanup to happen in finally
+            } else {
+                // Check history immediately in case it was cached
+                try {
+                    const historyData = await getHistory(promptId, settings.serverAddress);
+                    if (historyData && historyData[promptId]) {
+                        setStatus(GenerationStatus.FINISHED);
+                        setStatusMessage("Finished");
+                        setProgress(100);
+                        fetchGenerationResult(promptId);
+                    }
+                } catch (e) {
+                    // History not ready yet
                 }
-            } catch (e) {
-                // History not ready yet
             }
 
         } catch (err: any) {
@@ -1023,6 +1034,21 @@ export default function App() {
             setStatus(GenerationStatus.ERROR);
             setStatusMessage("Error");
             setErrorMsg(err.message || "Unknown error occurred");
+        } finally {
+            // Cleanup temporary input images
+            if (tempInputFiles.length > 0) {
+                console.log("Cleaning up temporary input images:", tempInputFiles);
+                for (const filename of tempInputFiles) {
+                    try {
+                        await fetch(`${settings.serverAddress}/api/delete-input-image`, {
+                            method: 'POST',
+                            body: JSON.stringify({ filename })
+                        });
+                    } catch (e) {
+                        console.error("Failed to delete temporary input image:", filename, e);
+                    }
+                }
+            }
         }
     };
 
@@ -1185,769 +1211,781 @@ export default function App() {
             </header>
 
             {/* Settings Modal */}
-            {showSettings && (
-                <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-fade-in absolute w-full z-30 shadow-2xl transition-colors duration-300">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">ComfyUI Server Address</label>
-                            <input
-                                type="text"
-                                value={settings.serverAddress}
-                                onChange={(e) => setSettings({ ...settings, serverAddress: e.target.value })}
-                                className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded p-2 text-sm text-gray-800 dark:text-gray-200 focus:border-${settings.theme}-500 outline-none transition-colors`}
-                            />
-                        </div>
-
-                        {/* Theme Selector */}
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-2">Interface Color</label>
-                            <div className="grid grid-cols-6 gap-2">
-                                {THEME_OPTIONS.map(color => (
-                                    <button
-                                        key={color}
-                                        onClick={() => setSettings({ ...settings, theme: color })}
-                                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${settings.theme === color ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
-                                        style={{ backgroundColor: COLOR_HEX[color] }}
-                                        title={color.charAt(0).toUpperCase() + color.slice(1)}
-                                    >
-                                        {settings.theme === color && <Check size={14} className="text-white drop-shadow-sm" />}
-                                    </button>
-                                ))}
-
-                                {/* Custom Color Picker */}
-                                <div className="relative w-8 h-8">
-                                    <div
-                                        className={`w-full h-full rounded-full flex items-center justify-center transition-all overflow-hidden bg-gradient-to-br from-red-500 via-green-500 to-blue-500 ${settings.theme === 'custom' ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
-                                        title="Custom Color"
-                                    >
-                                        {settings.theme === 'custom' && <Check size={14} className="text-white drop-shadow-md" />}
-                                    </div>
-                                    <input
-                                        type="color"
-                                        value={settings.customColor || '#ffffff'}
-                                        onChange={(e) => setSettings({ ...settings, theme: 'custom', customColor: e.target.value })}
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                        title="Choose custom color"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Blur</span>
-                            <button
-                                onClick={() => setSettings({ ...settings, nsfwMode: !settings.nsfwMode })}
-                                className={`w-12 h-6 rounded-full relative transition-colors ${settings.nsfwMode ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                            >
-                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.nsfwMode ? 'translate-x-6' : ''}`} />
-                            </button>
-                        </div>
-
-                        {/* Comparison Slider Toggle */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Comparison Slider</span>
-                                <span className="text-[10px] text-gray-500">Show Before/After slider for edits</span>
-                            </div>
-                            <button
-                                onClick={() => setSettings({ ...settings, enableComparison: !settings.enableComparison })}
-                                className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableComparison ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                            >
-                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableComparison ? 'translate-x-6' : ''}`} />
-                            </button>
-                        </div>
-
-                        {/* Feedback Toggle */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sounds/Haptics</span>
-                                <span className="text-[10px] text-gray-500">Vibration (Android) or Sound (iOS)</span>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    setSettings({ ...settings, enableFeedback: !settings.enableFeedback });
-                                    if (!settings.enableFeedback) {
-                                        // Trigger feedback immediately to demonstrate
-                                        if (haptic.isSupported()) {
-                                            haptic.trigger('medium');
-                                        } else {
-                                            sound.play('click');
-                                        }
-                                    }
-                                }}
-                                className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableFeedback ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                            >
-                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableFeedback ? 'translate-x-6' : ''}`} />
-                            </button>
-                        </div>
-
-                        <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
-                            <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
-                            <div className="flex flex-col gap-2">
-                                <button
-                                    onClick={handleClearHistory}
-                                    className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800"
-                                >
-                                    <Trash2 size={14} /> Clear History
-                                </button>
-
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {view === 'home' ? (
-                <main className="p-6 flex flex-col items-center justify-center min-h-[80vh] gap-6">
-                    <div className="text-center mb-4">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome</h2>
-                        <p className="text-gray-500 dark:text-gray-400">Choose a workflow to begin</p>
-                    </div>
-
-                    <button
-                        onClick={() => {
-                            setView('generate');
-                            haptic.trigger('medium');
-                            sound.play('click');
-                        }}
-                        className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                    >
-                        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                            <Wand2 size={100} />
-                        </div>
-                        <div className="relative z-10 flex flex-col items-start">
-                            <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                <Wand2 size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Image</h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Turbo Diffusion.</p>
-                        </div>
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            setView('edit');
-                            haptic.trigger('medium');
-                            sound.play('click');
-                        }}
-                        className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                    >
-                        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                            <PenTool size={100} />
-                        </div>
-                        <div className="relative z-10 flex flex-col items-start">
-                            <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                <PenTool size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Edit Image</h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Modify existing images with Qwen Image Edit.</p>
-                        </div>
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            setView('video');
-                            haptic.trigger('medium');
-                            sound.play('click');
-                        }}
-                        className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                    >
-                        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                            <Monitor size={100} />
-                        </div>
-                        <div className="relative z-10 flex flex-col items-start">
-                            <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                <Monitor size={32} />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Video</h3>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan2.1 Video Generation.</p>
-                        </div>
-                    </button>
-                </main>
-            ) : (
-                <main className="p-4 space-y-6 pb-24">
-
-                    {/* EDIT MODE: Model & Images */}
-                    {view === 'edit' && (
-                        <>
-                            {/* Model Selection */}
-                            <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-800 transition-colors duration-300 shadow-sm">
-                                <label className="block text-xs font-medium text-gray-500 mb-2">Model</label>
-                                <div className="relative">
-                                    <Cpu size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                    <select
-                                        value={selectedModel}
-                                        onChange={(e) => setSelectedModel(e.target.value)}
-                                        className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-8 pr-8 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                    >
-                                        {availableModels.map(m => (
-                                            <option key={m} value={m}>{m}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                </div>
-                            </div>
-
-                            {/* Image Inputs */}
-                            <div className="grid grid-cols-3 gap-3">
-                                {images.map((img, idx) => (
-                                    <ImageInput
-                                        key={idx}
-                                        index={idx}
-                                        image={img}
-                                        disabled={idx > 0 && !images[0]}
-                                        onFileSelect={handleFileSelect}
-                                        onServerSelectRequest={openServerSelector}
-                                        onUpload={handleUploadToServer}
-                                        onClear={handleClearImage}
-                                        theme={settings.theme}
-                                        allowRemote={settings.enableRemoteInput}
-                                    />
-                                ))}
-                            </div>
-                        </>
-                    )}
-
-                    {/* VIDEO MODE: Image Input */}
-                    {view === 'video' && (
-                        <div className="grid grid-cols-1 gap-3">
-                            <ImageInput
-                                index={0}
-                                image={images[0]}
-                                disabled={false}
-                                onFileSelect={handleFileSelect}
-                                onServerSelectRequest={openServerSelector}
-                                onUpload={handleUploadToServer}
-                                onClear={handleClearImage}
-                                theme={settings.theme}
-                                allowRemote={settings.enableRemoteInput}
-                            />
-                        </div>
-                    )}
-
-                    {/* Prompt Input (Common) */}
-                    <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
-
-
-
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
-                            {settings.enableRemoteInput && (
-                                <PromptManager
-                                    currentPrompt={prompt}
-                                    serverAddress={settings.serverAddress}
-                                    onLoadPrompt={setPrompt}
-                                    theme={settings.theme}
+            {
+                showSettings && (
+                    <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-fade-in absolute w-full z-30 shadow-2xl transition-colors duration-300">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">ComfyUI Server Address</label>
+                                <input
+                                    type="text"
+                                    value={settings.serverAddress}
+                                    onChange={(e) => setSettings({ ...settings, serverAddress: e.target.value })}
+                                    className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded p-2 text-sm text-gray-800 dark:text-gray-200 focus:border-${settings.theme}-500 outline-none transition-colors`}
                                 />
-                            )}
-                        </div>
-                        {/* Prompt History (Generate Mode Only) */}
-                        {view === 'generate' && promptHistory.length > 0 && (
-                            <div className="mb-2 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                                {promptHistory.map((p, idx) => (
+                            </div>
+
+                            {/* Theme Selector */}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-2">Interface Color</label>
+                                <div className="grid grid-cols-6 gap-2">
+                                    {THEME_OPTIONS.map(color => (
+                                        <button
+                                            key={color}
+                                            onClick={() => setSettings({ ...settings, theme: color })}
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${settings.theme === color ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
+                                            style={{ backgroundColor: COLOR_HEX[color] }}
+                                            title={color.charAt(0).toUpperCase() + color.slice(1)}
+                                        >
+                                            {settings.theme === color && <Check size={14} className="text-white drop-shadow-sm" />}
+                                        </button>
+                                    ))}
+
+                                    {/* Custom Color Picker */}
+                                    <div className="relative w-8 h-8">
+                                        <div
+                                            className={`w-full h-full rounded-full flex items-center justify-center transition-all overflow-hidden bg-gradient-to-br from-red-500 via-green-500 to-blue-500 ${settings.theme === 'custom' ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
+                                            title="Custom Color"
+                                        >
+                                            {settings.theme === 'custom' && <Check size={14} className="text-white drop-shadow-md" />}
+                                        </div>
+                                        <input
+                                            type="color"
+                                            value={settings.customColor || '#ffffff'}
+                                            onChange={(e) => setSettings({ ...settings, theme: 'custom', customColor: e.target.value })}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            title="Choose custom color"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Blur</span>
+                                <button
+                                    onClick={() => setSettings({ ...settings, nsfwMode: !settings.nsfwMode })}
+                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.nsfwMode ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.nsfwMode ? 'translate-x-6' : ''}`} />
+                                </button>
+                            </div>
+
+                            {/* Comparison Slider Toggle */}
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Comparison Slider</span>
+                                    <span className="text-[10px] text-gray-500">Show Before/After slider for edits</span>
+                                </div>
+                                <button
+                                    onClick={() => setSettings({ ...settings, enableComparison: !settings.enableComparison })}
+                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableComparison ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableComparison ? 'translate-x-6' : ''}`} />
+                                </button>
+                            </div>
+
+                            {/* Feedback Toggle */}
+                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sounds/Haptics</span>
+                                    <span className="text-[10px] text-gray-500">Vibration (Android) or Sound (iOS)</span>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setSettings({ ...settings, enableFeedback: !settings.enableFeedback });
+                                        if (!settings.enableFeedback) {
+                                            // Trigger feedback immediately to demonstrate
+                                            if (haptic.isSupported()) {
+                                                haptic.trigger('medium');
+                                            } else {
+                                                sound.play('click');
+                                            }
+                                        }
+                                    }}
+                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableFeedback ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableFeedback ? 'translate-x-6' : ''}`} />
+                                </button>
+                            </div>
+
+                            <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                                <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
+                                <div className="flex flex-col gap-2">
                                     <button
-                                        key={idx}
-                                        onClick={() => setPrompt(p)}
-                                        className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-${settings.theme}-50 dark:hover:bg-${settings.theme}-900/20 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-200 dark:hover:border-${settings.theme}-800 transition-all truncate max-w-[150px] flex items-center gap-1`}
-                                        title={p}
+                                        onClick={handleClearHistory}
+                                        className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800"
                                     >
-                                        <History size={10} />
-                                        {p}
+                                        <Trash2 size={14} /> Clear History
                                     </button>
-                                ))}
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {
+                view === 'home' ? (
+                    <main className="p-6 flex flex-col items-center justify-center min-h-[80vh] gap-6">
+                        <div className="text-center mb-4">
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome</h2>
+                            <p className="text-gray-500 dark:text-gray-400">Choose a workflow to begin</p>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                setView('generate');
+                                haptic.trigger('medium');
+                                sound.play('click');
+                            }}
+                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
+                        >
+                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                                <Wand2 size={100} />
+                            </div>
+                            <div className="relative z-10 flex flex-col items-start">
+                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                                    <Wand2 size={32} />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Image</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Turbo Diffusion.</p>
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setView('edit');
+                                haptic.trigger('medium');
+                                sound.play('click');
+                            }}
+                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
+                        >
+                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                                <PenTool size={100} />
+                            </div>
+                            <div className="relative z-10 flex flex-col items-start">
+                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                                    <PenTool size={32} />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Edit Image</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Modify existing images with Qwen Image Edit.</p>
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setView('video');
+                                haptic.trigger('medium');
+                                sound.play('click');
+                            }}
+                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
+                        >
+                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
+                                <Monitor size={100} />
+                            </div>
+                            <div className="relative z-10 flex flex-col items-start">
+                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
+                                    <Monitor size={32} />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Video</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan2.1 Video Generation.</p>
+                            </div>
+                        </button>
+                    </main>
+                ) : (
+                    <main className="p-4 space-y-6 pb-24">
+
+                        {/* EDIT MODE: Model & Images */}
+                        {view === 'edit' && (
+                            <>
+                                {/* Model Selection */}
+                                <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-800 transition-colors duration-300 shadow-sm">
+                                    <label className="block text-xs font-medium text-gray-500 mb-2">Model</label>
+                                    <div className="relative">
+                                        <Cpu size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                        <select
+                                            value={selectedModel}
+                                            onChange={(e) => setSelectedModel(e.target.value)}
+                                            className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-8 pr-8 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                        >
+                                            {availableModels.map(m => (
+                                                <option key={m} value={m}>{m}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Image Inputs */}
+                                <div className="grid grid-cols-3 gap-3">
+                                    {images.map((img, idx) => (
+                                        <ImageInput
+                                            key={idx}
+                                            index={idx}
+                                            image={img}
+                                            disabled={idx > 0 && !images[0]}
+                                            onFileSelect={handleFileSelect}
+                                            onServerSelectRequest={openServerSelector}
+                                            onUpload={handleUploadToServer}
+                                            onClear={handleClearImage}
+                                            theme={settings.theme}
+                                            allowRemote={settings.enableRemoteInput}
+                                        />
+                                    ))}
+                                </div>
+                            </>
+                        )}
+
+                        {/* VIDEO MODE: Image Input */}
+                        {view === 'video' && (
+                            <div className="grid grid-cols-1 gap-3">
+                                <ImageInput
+                                    index={0}
+                                    image={images[0]}
+                                    disabled={false}
+                                    onFileSelect={handleFileSelect}
+                                    onServerSelectRequest={openServerSelector}
+                                    onUpload={handleUploadToServer}
+                                    onClear={handleClearImage}
+                                    theme={settings.theme}
+                                    allowRemote={settings.enableRemoteInput}
+                                />
                             </div>
                         )}
-                        <textarea
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            placeholder={view === 'edit' ? "Describe your edit..." : view === 'video' ? "Describe the video you want to generate..." : "Describe the image you want to generate..."}
-                            className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
-                        />
-                        <div className="flex justify-end mt-2">
-                            <button
-                                onClick={() => setPrompt("")}
-                                className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
-                            >
-                                <Trash2 size={12} /> Clear Prompt
-                            </button>
-                        </div>
 
-
-                    </div>
-
-
-
-                    {/* GENERATE MODE: Negative Prompt */}
-                    {view === 'generate' && (
+                        {/* Prompt Input (Common) */}
                         <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-xs font-medium text-gray-500">Negative Prompt</span>
-                            </div>
-                            <textarea
-                                value={negativePrompt}
-                                onChange={(e) => setNegativePrompt(e.target.value)}
-                                placeholder="Things to avoid..."
-                                className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[60px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
-                            />
-                        </div>
-                    )}
 
-                    {/* GENERATE MODE: Styles */}
-                    {view === 'generate' && (
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+
+
                             <div className="flex justify-between items-center mb-2">
-                                <span className="text-xs font-medium text-gray-500">Styles</span>
+                                <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
+                                {settings.enableRemoteInput && (
+                                    <PromptManager
+                                        currentPrompt={prompt}
+                                        serverAddress={settings.serverAddress}
+                                        onLoadPrompt={setPrompt}
+                                        theme={settings.theme}
+                                    />
+                                )}
                             </div>
-                            <div className="overflow-x-auto no-scrollbar p-1">
-                                <div className="flex gap-2">
-                                    {STYLES.map(style => (
+                            {/* Prompt History (Generate Mode Only) */}
+                            {view === 'generate' && promptHistory.length > 0 && (
+                                <div className="mb-2 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                                    {promptHistory.map((p, idx) => (
                                         <button
-                                            key={style.id}
-                                            onClick={() => setSelectedStyle(style.id)}
-                                            className={`flex-shrink-0 relative overflow-hidden rounded-lg w-20 h-12 flex items-center justify-center transition-all ${selectedStyle === style.id ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-' + settings.theme + '-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+                                            key={idx}
+                                            onClick={() => setPrompt(p)}
+                                            className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-${settings.theme}-50 dark:hover:bg-${settings.theme}-900/20 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-200 dark:hover:border-${settings.theme}-800 transition-all truncate max-w-[150px] flex items-center gap-1`}
+                                            title={p}
                                         >
-                                            <div className={`absolute inset-0 ${style.color}`} />
-                                            <span className={`relative z-10 text-[10px] font-bold ${style.id === 'none' ? 'text-gray-800 dark:text-gray-200' : (style.id === 'watercolor' || style.id === 'vintage' ? 'text-gray-800' : 'text-white')} drop-shadow-sm`}>{style.name}</span>
+                                            <History size={10} />
+                                            {p}
                                         </button>
                                     ))}
                                 </div>
+                            )}
+                            <textarea
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                placeholder={view === 'edit' ? "Describe your edit..." : view === 'video' ? "Describe the video you want to generate..." : "Describe the image you want to generate..."}
+                                className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
+                            />
+                            <div className="flex justify-end mt-2">
+                                <button
+                                    onClick={() => setPrompt("")}
+                                    className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
+                                >
+                                    <Trash2 size={12} /> Clear Prompt
+                                </button>
                             </div>
-                        </div>
-                    )}
 
-                    {/* Last Generated Result Card (Non-Sticky) */}
-                    {lastGeneratedImage && !showResultPreview && (
-                        <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
-                            <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                                <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
-                                    <Check size={12} /> Generation Complete
-                                </span>
-                                <div className="flex gap-4">
-                                    <a
-                                        href={lastGeneratedImage}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
-                                        title="Open in New Tab"
-                                    >
-                                        <ExternalLink size={14} />
-                                    </a>
-                                    {/* Only show "Use as Input" buttons if it's an image */}
-                                    {!lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
-                                        <>
-                                            <button onClick={() => handleUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
-                                                <PenTool size={14} />
+
+                        </div>
+
+
+
+                        {/* GENERATE MODE: Negative Prompt */}
+                        {view === 'generate' && (
+                            <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-medium text-gray-500">Negative Prompt</span>
+                                </div>
+                                <textarea
+                                    value={negativePrompt}
+                                    onChange={(e) => setNegativePrompt(e.target.value)}
+                                    placeholder="Things to avoid..."
+                                    className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[60px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
+                                />
+                            </div>
+                        )}
+
+                        {/* GENERATE MODE: Styles */}
+                        {view === 'generate' && (
+                            <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-medium text-gray-500">Styles</span>
+                                </div>
+                                <div className="overflow-x-auto no-scrollbar p-1">
+                                    <div className="flex gap-2">
+                                        {STYLES.map(style => (
+                                            <button
+                                                key={style.id}
+                                                onClick={() => setSelectedStyle(style.id)}
+                                                className={`flex-shrink-0 relative overflow-hidden rounded-lg w-20 h-12 flex items-center justify-center transition-all ${selectedStyle === style.id ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-900 ring-' + settings.theme + '-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+                                            >
+                                                <div className={`absolute inset-0 ${style.color}`} />
+                                                <span className={`relative z-10 text-[10px] font-bold ${style.id === 'none' ? 'text-gray-800 dark:text-gray-200' : (style.id === 'watercolor' || style.id === 'vintage' ? 'text-gray-800' : 'text-white')} drop-shadow-sm`}>{style.name}</span>
                                             </button>
-                                            <button onClick={() => handleUseResult('video')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Video Input">
-                                                <Monitor size={14} />
-                                            </button>
-                                        </>
-                                    )}
-                                    <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
-                                        <X size={14} />
-                                    </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="relative h-64 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
-                                {lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
-                                    <video
-                                        src={lastGeneratedImage}
-                                        className="w-full h-full object-contain"
-                                        controls
-                                        autoPlay
-                                        loop
-                                        muted
-                                    />
-                                ) : (
-                                    <>
-                                        <img
-                                            src={lastGeneratedImage}
-                                            className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
-                                            alt="Result"
-                                        />
-                                        {settings.nsfwMode && !resultRevealed && (
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
-                                            </div>
+                        )}
+
+                        {/* Last Generated Result Card (Non-Sticky) */}
+                        {lastGeneratedImage && !showResultPreview && (
+                            <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
+                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                                    <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
+                                        <Check size={12} /> Generation Complete
+                                    </span>
+                                    <div className="flex gap-4">
+                                        <a
+                                            href={lastGeneratedImage}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                                            title="Open in New Tab"
+                                        >
+                                            <ExternalLink size={14} />
+                                        </a>
+                                        {/* Only show "Use as Input" buttons if it's an image */}
+                                        {!lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
+                                            <>
+                                                <button onClick={() => handleUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
+                                                    <PenTool size={14} />
+                                                </button>
+                                                <button onClick={() => handleUseResult('video')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Video Input">
+                                                    <Monitor size={14} />
+                                                </button>
+                                            </>
                                         )}
-                                        <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors pointer-events-none">
-                                            <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
-                                        </div>
-                                    </>
-                                )}
-
-                                {/* Duration Badge */}
-                                {lastGenerationDuration > 0 && (
-                                    <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                        <Clock size={10} />
-                                        {(lastGenerationDuration / 1000).toFixed(1)}s
+                                        <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
+                                            <X size={14} />
+                                        </button>
                                     </div>
-                                )}
+                                </div>
+                                <div className="relative h-64 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
+                                    {lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                        <video
+                                            src={lastGeneratedImage}
+                                            className="w-full h-full object-contain"
+                                            controls
+                                            autoPlay
+                                            loop
+                                            muted
+                                        />
+                                    ) : (
+                                        <>
+                                            <img
+                                                src={lastGeneratedImage}
+                                                className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
+                                                alt="Result"
+                                            />
+                                            {settings.nsfwMode && !resultRevealed && (
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
+                                                </div>
+                                            )}
+                                            <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors pointer-events-none">
+                                                <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Duration Badge */}
+                                    {lastGenerationDuration > 0 && (
+                                        <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                            <Clock size={10} />
+                                            {(lastGenerationDuration / 1000).toFixed(1)}s
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {/* Config (Collapsible) */}
-                    <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900/50 overflow-hidden shadow-sm transition-colors duration-300">
-                        <button
-                            onClick={() => setShowLoraConfig(!showLoraConfig)}
-                            className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                        >
-                            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                                <SlidersHorizontal size={16} />
-                                <span className="text-sm font-medium">Advanced Configuration</span>
-                            </div>
-                            {showLoraConfig ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
-                        </button>
+                        {/* Config (Collapsible) */}
+                        <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900/50 overflow-hidden shadow-sm transition-colors duration-300">
+                            <button
+                                onClick={() => setShowLoraConfig(!showLoraConfig)}
+                                className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            >
+                                <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                                    <SlidersHorizontal size={16} />
+                                    <span className="text-sm font-medium">Advanced Configuration</span>
+                                </div>
+                                {showLoraConfig ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                            </button>
 
-                        {showLoraConfig && (
-                            <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
+                            {showLoraConfig && (
+                                <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
 
-                                {/* VIDEO MODE: Advanced Options */}
-                                {view === 'video' && (
-                                    <>
-                                        {/* Resolution Control */}
+                                    {/* VIDEO MODE: Advanced Options */}
+                                    {view === 'video' && (
+                                        <>
+                                            {/* Resolution Control */}
+                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                                <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {VIDEO_RESOLUTIONS.map(res => (
+                                                        <button
+                                                            key={res.id}
+                                                            onClick={() => setVideoResolution(res.id)}
+                                                            className={`py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${videoResolution === res.id
+                                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                                }`}
+                                                        >
+                                                            {res.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Length Control */}
+                                            <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Seconds)</span>
+                                                    <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoDuration}s</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="1"
+                                                    max="5"
+                                                    step="1"
+                                                    value={videoDuration}
+                                                    onChange={(e) => setVideoDuration(parseInt(e.target.value))}
+                                                    className={`w-full accent-${settings.theme}-600 cursor-pointer`}
+                                                />
+                                                <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                                                    <span>1s</span>
+                                                    <span>2s</span>
+                                                    <span>3s</span>
+                                                    <span>4s</span>
+                                                    <span>5s</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Extend Toggle */}
+                                            <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Extend Video</span>
+                                                    <span className="text-[10px] text-gray-500">Enable RIFE VFI interpolation</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => setExtendVideo(!extendVideo)}
+                                                    className={`w-12 h-6 rounded-full relative transition-colors ${extendVideo ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                                >
+                                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${extendVideo ? 'translate-x-6' : ''}`} />
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Resolution Control (Generate/Edit) */}
+                                    {view !== 'video' && (
                                         <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                {VIDEO_RESOLUTIONS.map(res => (
-                                                    <button
-                                                        key={res.id}
-                                                        onClick={() => setVideoResolution(res.id)}
-                                                        className={`py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${videoResolution === res.id
-                                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                            }`}
-                                                    >
-                                                        {res.label}
-                                                    </button>
-                                                ))}
+                                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
+                                            <div className="flex gap-2 flex-wrap">
+                                                {ASPECT_RATIOS.map(res => {
+                                                    const Icon = res.icon;
+                                                    return (
+                                                        <button
+                                                            key={res.id}
+                                                            onClick={() => setSelectedResolution(res.id)}
+                                                            className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === res.id
+                                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                                }`}
+                                                        >
+                                                            <Icon size={12} className="hidden sm:block" />
+                                                            {res.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {/* Custom Button */}
+                                                <button
+                                                    onClick={() => setSelectedResolution('custom')}
+                                                    className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === 'custom'
+                                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
+                                                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                        }`}
+                                                >
+                                                    <Monitor size={12} className="hidden sm:block" />
+                                                    Custom
+                                                </button>
+                                            </div>
+
+                                            {selectedResolution === 'custom' && (
+                                                <div className="flex gap-3 mt-3 animate-fade-in">
+                                                    <div className="flex-1">
+                                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
+                                                        <input
+                                                            type="number"
+                                                            value={customDimensions.width}
+                                                            onChange={(e) => setCustomDimensions(prev => ({ ...prev, width: e.target.value === '' ? '' : parseInt(e.target.value) }))}
+                                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                                        />
+                                                    </div>
+                                                    <div className="flex items-end pb-2 text-gray-400">x</div>
+                                                    <div className="flex-1">
+                                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
+                                                        <input
+                                                            type="number"
+                                                            value={customDimensions.height}
+                                                            onChange={(e) => setCustomDimensions(prev => ({ ...prev, height: e.target.value === '' ? '' : parseInt(e.target.value) }))}
+                                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Seed Control */}
+                                    <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Seed</span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => setSettings({ ...settings, randomizeSeed: !settings.randomizeSeed })}
+                                                    className={`p-1.5 rounded text-xs flex items-center gap-1 transition-colors ${settings.randomizeSeed
+                                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 text-${settings.theme}-600 dark:text-${settings.theme}-300 font-medium`
+                                                        : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                                                        }`}
+                                                    title="Auto-randomize seed on generate"
+                                                >
+                                                    <Sparkles size={12} /> Auto
+                                                </button>
+                                                <button onClick={randomizeSeed} className={`text-${settings.theme}-500 dark:text-${settings.theme}-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-300`}>
+                                                    <RefreshCw size={16} />
+                                                </button>
                                             </div>
                                         </div>
+                                        <input
+                                            type="number"
+                                            value={seed}
+                                            onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
+                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
+                                        />
+                                    </div>
 
-                                        {/* Length Control */}
+                                    {/* Steps Control (Generate Mode Only) */}
+                                    {view === 'generate' && (
                                         <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
                                             <div className="flex justify-between items-center mb-2">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Seconds)</span>
-                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoDuration}s</span>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Steps</span>
+                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{steps}</span>
                                             </div>
                                             <input
                                                 type="range"
                                                 min="1"
-                                                max="5"
-                                                step="1"
-                                                value={videoDuration}
-                                                onChange={(e) => setVideoDuration(parseInt(e.target.value))}
-                                                className={`w-full accent-${settings.theme}-600 cursor-pointer`}
+                                                max="50"
+                                                value={steps}
+                                                onChange={(e) => setSteps(parseInt(e.target.value))}
+                                                className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
                                             />
-                                            <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                                                <span>1s</span>
-                                                <span>2s</span>
-                                                <span>3s</span>
-                                                <span>4s</span>
-                                                <span>5s</span>
-                                            </div>
                                         </div>
-
-                                        {/* Extend Toggle */}
-                                        <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Extend Video</span>
-                                                <span className="text-[10px] text-gray-500">Enable RIFE VFI interpolation</span>
-                                            </div>
-                                            <button
-                                                onClick={() => setExtendVideo(!extendVideo)}
-                                                className={`w-12 h-6 rounded-full relative transition-colors ${extendVideo ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                                            >
-                                                <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${extendVideo ? 'translate-x-6' : ''}`} />
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-
-                                {/* Resolution Control (Generate/Edit) */}
-                                {view !== 'video' && (
-                                    <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                        <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
-                                        <div className="flex gap-2 flex-wrap">
-                                            {ASPECT_RATIOS.map(res => {
-                                                const Icon = res.icon;
-                                                return (
-                                                    <button
-                                                        key={res.id}
-                                                        onClick={() => setSelectedResolution(res.id)}
-                                                        className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === res.id
-                                                            ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                            }`}
-                                                    >
-                                                        <Icon size={12} className="hidden sm:block" />
-                                                        {res.label}
-                                                    </button>
-                                                );
-                                            })}
-                                            {/* Custom Button */}
-                                            <button
-                                                onClick={() => setSelectedResolution('custom')}
-                                                className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === 'custom'
-                                                    ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                    : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                    }`}
-                                            >
-                                                <Monitor size={12} className="hidden sm:block" />
-                                                Custom
-                                            </button>
-                                        </div>
-
-                                        {selectedResolution === 'custom' && (
-                                            <div className="flex gap-3 mt-3 animate-fade-in">
-                                                <div className="flex-1">
-                                                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
-                                                    <input
-                                                        type="number"
-                                                        value={customDimensions.width}
-                                                        onChange={(e) => setCustomDimensions(prev => ({ ...prev, width: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                    />
-                                                </div>
-                                                <div className="flex items-end pb-2 text-gray-400">x</div>
-                                                <div className="flex-1">
-                                                    <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
-                                                    <input
-                                                        type="number"
-                                                        value={customDimensions.height}
-                                                        onChange={(e) => setCustomDimensions(prev => ({ ...prev, height: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Seed Control */}
-                                <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Seed</span>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setSettings({ ...settings, randomizeSeed: !settings.randomizeSeed })}
-                                                className={`p-1.5 rounded text-xs flex items-center gap-1 transition-colors ${settings.randomizeSeed
-                                                    ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 text-${settings.theme}-600 dark:text-${settings.theme}-300 font-medium`
-                                                    : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                                                    }`}
-                                                title="Auto-randomize seed on generate"
-                                            >
-                                                <Sparkles size={12} /> Auto
-                                            </button>
-                                            <button onClick={randomizeSeed} className={`text-${settings.theme}-500 dark:text-${settings.theme}-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-300`}>
-                                                <RefreshCw size={16} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <input
-                                        type="number"
-                                        value={seed}
-                                        onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
-                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                    />
-                                </div>
-
-                                {/* Steps Control (Generate Mode Only) */}
-                                {view === 'generate' && (
-                                    <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Steps</span>
-                                            <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{steps}</span>
-                                        </div>
-                                        <input
-                                            type="range"
-                                            min="1"
-                                            max="50"
-                                            value={steps}
-                                            onChange={(e) => setSteps(parseInt(e.target.value))}
-                                            className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Sampler & Scheduler Control */}
-                                {view !== 'video' && (
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
-                                            <div className="relative">
-                                                <select
-                                                    value={selectedSampler}
-                                                    onChange={(e) => setSelectedSampler(e.target.value)}
-                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                                >
-                                                    {SAMPLER_OPTIONS.map(s => (
-                                                        <option key={s} value={s}>{s}</option>
-                                                    ))}
-                                                </select>
-                                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                            </div>
-                                        </div>
-
-                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
-                                            <div className="relative">
-                                                <select
-                                                    value={selectedScheduler}
-                                                    onChange={(e) => setSelectedScheduler(e.target.value)}
-                                                    className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                                >
-                                                    {SCHEDULER_OPTIONS.map(s => (
-                                                        <option key={s} value={s}>{s}</option>
-                                                    ))}
-                                                </select>
-                                                <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* LoRAs (Only in Edit Mode) */}
-                                {view === 'edit' && (
-                                    <div className="space-y-3">
-                                        {loras.map((lora, index) => (
-                                            <LoraControl
-                                                key={lora.id}
-                                                id={lora.id}
-                                                label={`LoRA ${index + 1}`}
-                                                enabled={lora.enabled}
-                                                strength={lora.strength}
-                                                availableLoras={availableLoras}
-                                                selectedLoraName={lora.name}
-                                                onUpdate={handleUpdateLora}
-                                                onDelete={handleDeleteLora}
-                                                theme={settings.theme}
-                                            />
-                                        ))}
-
-                                        {settings.enableRemoteInput && (
-                                            <button
-                                                onClick={handleAddLora}
-                                                disabled={loras.length >= 10}
-                                                className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                                            >
-                                                <Plus size={18} /> Add LoRA
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Error Message */}
-                    {errorMsg && (
-                        <div className="bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-200 p-3 rounded-lg text-sm flex items-start gap-2">
-                            <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                            <span>{errorMsg}</span>
-                        </div>
-                    )}
-
-                </main>
-            )}
-
-            {/* Result Preview Modal (Full Screen) */}
-            {showResultPreview && lastGeneratedImage && (
-                <CompareModal
-                    resultImage={lastGeneratedImage}
-                    inputImage={getComparisonInputUrl()}
-                    onClose={() => setShowResultPreview(false)}
-                    onUseResult={handleUseResult}
-                    nsfwMode={settings.nsfwMode}
-                    theme={settings.theme}
-                />
-            )}
-
-            {/* Bottom Bar: Generate Button & Status */}
-            {view !== 'home' && (
-                <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
-                    <button
-                        onClick={() => {
-                            handleGenerateClick();
-                            haptic.trigger('heavy');
-                            sound.play('click');
-                        }}
-                        disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
-                        className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
-                    ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR)
-                                ? `bg-${settings.theme}-600 hover:bg-${settings.theme}-500 hover:scale-[1.02] active:scale-[0.98]`
-                                : 'bg-gray-400 dark:bg-gray-800 cursor-not-allowed'}`}
-                    >
-                        {/* Progress Bar Background */}
-                        {(status === GenerationStatus.EXECUTING || status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED) && (
-                            <div
-                                className={`absolute left-0 top-0 h-full bg-${settings.theme}-700 transition-all duration-300 ease-out`}
-                                style={{ width: `${progress}%` }}
-                            />
-                        )}
-
-                        <div className="relative z-10 flex items-center justify-center gap-2 w-full h-full">
-                            {status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR ? (
-                                <>
-                                    <Zap size={20} className={status === GenerationStatus.FINISHED ? "text-yellow-300" : ""} />
-                                    <span>{view === 'edit' ? 'Edit Image' : 'Generate'}</span>
-                                </>
-                            ) : (
-                                <>
-                                    {status === GenerationStatus.UPLOADING && <span className="animate-pulse">{statusMessage || "Uploading..."}</span>}
-                                    {status === GenerationStatus.QUEUED && <span className="animate-pulse">{statusMessage || "Queued..."}</span>}
-                                    {status === GenerationStatus.EXECUTING && (
-                                        <>
-                                            <Loader2 size={20} className="animate-spin" />
-                                            <span>
-                                                {/* Show percentage if generating, otherwise show granular status message */}
-                                                {progress > 0 ? `${progress}%` : (statusMessage || "Processing...")}
-                                            </span>
-                                        </>
                                     )}
-                                </>
+
+                                    {/* Sampler & Scheduler Control */}
+                                    {view !== 'video' && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={selectedSampler}
+                                                        onChange={(e) => setSelectedSampler(e.target.value)}
+                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                                    >
+                                                        {SAMPLER_OPTIONS.map(s => (
+                                                            <option key={s} value={s}>{s}</option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                                </div>
+                                            </div>
+
+                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={selectedScheduler}
+                                                        onChange={(e) => setSelectedScheduler(e.target.value)}
+                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
+                                                    >
+                                                        {SCHEDULER_OPTIONS.map(s => (
+                                                            <option key={s} value={s}>{s}</option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* LoRAs (Only in Edit Mode) */}
+                                    {view === 'edit' && (
+                                        <div className="space-y-3">
+                                            {loras.map((lora, index) => (
+                                                <LoraControl
+                                                    key={lora.id}
+                                                    id={lora.id}
+                                                    label={`LoRA ${index + 1}`}
+                                                    enabled={lora.enabled}
+                                                    strength={lora.strength}
+                                                    availableLoras={availableLoras}
+                                                    selectedLoraName={lora.name}
+                                                    onUpdate={handleUpdateLora}
+                                                    onDelete={handleDeleteLora}
+                                                    theme={settings.theme}
+                                                />
+                                            ))}
+
+                                            {settings.enableRemoteInput && (
+                                                <button
+                                                    onClick={handleAddLora}
+                                                    disabled={loras.length >= 10}
+                                                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                                                >
+                                                    <Plus size={18} /> Add LoRA
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
-                    </button>
 
-                    {/* Stop Button - Only visible when busy */}
-                    {(status === GenerationStatus.EXECUTING || status === GenerationStatus.QUEUED) && (
+                        {/* Error Message */}
+                        {errorMsg && (
+                            <div className="bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-200 p-3 rounded-lg text-sm flex items-start gap-2">
+                                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                                <span>{errorMsg}</span>
+                            </div>
+                        )}
+
+                    </main>
+                )
+            }
+
+            {/* Result Preview Modal (Full Screen) */}
+            {
+                showResultPreview && lastGeneratedImage && (
+                    <CompareModal
+                        resultImage={lastGeneratedImage}
+                        inputImage={getComparisonInputUrl()}
+                        onClose={() => setShowResultPreview(false)}
+                        onUseResult={handleUseResult}
+                        nsfwMode={settings.nsfwMode}
+                        theme={settings.theme}
+                    />
+                )
+            }
+
+            {/* Bottom Bar: Generate Button & Status */}
+            {
+                view !== 'home' && (
+                    <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
                         <button
-                            onClick={handleInterrupt}
-                            className="h-12 w-12 flex items-center justify-center bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800 transition-colors"
-                            title="Stop Generation"
+                            onClick={() => {
+                                handleGenerateClick();
+                                haptic.trigger('heavy');
+                                sound.play('click');
+                            }}
+                            disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
+                            className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
+                    ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR)
+                                    ? `bg-${settings.theme}-600 hover:bg-${settings.theme}-500 hover:scale-[1.02] active:scale-[0.98]`
+                                    : 'bg-gray-400 dark:bg-gray-800 cursor-not-allowed'}`}
                         >
-                            <Square size={20} fill="currentColor" />
+                            {/* Progress Bar Background */}
+                            {(status === GenerationStatus.EXECUTING || status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED) && (
+                                <div
+                                    className={`absolute left-0 top-0 h-full bg-${settings.theme}-700 transition-all duration-300 ease-out`}
+                                    style={{ width: `${progress}%` }}
+                                />
+                            )}
+
+                            <div className="relative z-10 flex items-center justify-center gap-2 w-full h-full">
+                                {status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR ? (
+                                    <>
+                                        <Zap size={20} className={status === GenerationStatus.FINISHED ? "text-yellow-300" : ""} />
+                                        <span>{view === 'edit' ? 'Edit Image' : 'Generate'}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        {status === GenerationStatus.UPLOADING && <span className="animate-pulse">{statusMessage || "Uploading..."}</span>}
+                                        {status === GenerationStatus.QUEUED && <span className="animate-pulse">{statusMessage || "Queued..."}</span>}
+                                        {status === GenerationStatus.EXECUTING && (
+                                            <>
+                                                <Loader2 size={20} className="animate-spin" />
+                                                <span>
+                                                    {/* Show percentage if generating, otherwise show granular status message */}
+                                                    {progress > 0 ? `${progress}%` : (statusMessage || "Processing...")}
+                                                </span>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </button>
-                    )}
-                </div>
-            )}
+
+                        {/* Stop Button - Only visible when busy */}
+                        {(status === GenerationStatus.EXECUTING || status === GenerationStatus.QUEUED) && (
+                            <button
+                                onClick={handleInterrupt}
+                                className="h-12 w-12 flex items-center justify-center bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800 transition-colors"
+                                title="Stop Generation"
+                            >
+                                <Square size={20} fill="currentColor" />
+                            </button>
+                        )}
+                    </div>
+                )
+            }
             {/* History Modal */}
-            {showHistory && (
-                <HistoryGallery
-                    history={history}
-                    onSelect={(item) => handleHistorySelect(item, 'edit')}
-                    onSelectVideo={(item) => handleHistorySelect(item, 'video')}
-                    onClose={() => setShowHistory(false)}
-                    onDelete={handleDeleteImage}
-                    nsfwMode={settings.nsfwMode}
-                    theme={settings.theme}
-                    serverAddress={settings.serverAddress}
-                />
-            )}
+            {
+                showHistory && (
+                    <HistoryGallery
+                        history={history}
+                        onSelect={(item) => handleHistorySelect(item, 'edit')}
+                        onSelectVideo={(item) => handleHistorySelect(item, 'video')}
+                        onClose={() => setShowHistory(false)}
+                        onDelete={handleDeleteImage}
+                        nsfwMode={settings.nsfwMode}
+                        theme={settings.theme}
+                        serverAddress={settings.serverAddress}
+                    />
+                )
+            }
 
             {/* Server Image Selector Modal */}
-            {showServerSelector.show && (
-                <ServerImageSelector
-                    serverAddress={settings.serverAddress}
-                    images={availableServerImages}
-                    onSelect={handleServerImageSelect}
-                    onClose={() => setShowServerSelector({ show: false, index: -1 })}
-                    theme={settings.theme}
-                />
-            )}
+            {
+                showServerSelector.show && (
+                    <ServerImageSelector
+                        serverAddress={settings.serverAddress}
+                        images={availableServerImages}
+                        onSelect={handleServerImageSelect}
+                        onClose={() => setShowServerSelector({ show: false, index: -1 })}
+                        theme={settings.theme}
+                    />
+                )
+            }
 
-        </div>
+        </div >
     );
 }
