@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, EyeOff, ExternalLink, Cpu, Clock, X, Maximize2, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
+import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, Cpu, Clock, X, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES, VIDEO_RESOLUTIONS } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
@@ -165,6 +165,10 @@ export default function App() {
     // Revised Images State (Only for Edit Mode)
     const [images, setImages] = useState<(InputImage | null)[]>([null, null, null]);
 
+    // Batch Generation State
+    const [batchCount, setBatchCount] = useState<number>(1);
+    const activeBatchIdsRef = useRef<Set<string>>(new Set());
+
     // Server Image Selection
     const [showServerSelector, setShowServerSelector] = useState<{ show: boolean, index: number }>({ show: false, index: -1 });
     const [availableServerImages, setAvailableServerImages] = useState<string[]>([]);
@@ -183,7 +187,7 @@ export default function App() {
     const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
     const [progress, setProgress] = useState(0); // 0-100
     const [statusMessage, setStatusMessage] = useState<string>(""); // Granular status text
-    const [lastGeneratedImage, setLastGeneratedImage] = useState<string | null>(null);
+    const [lastGeneratedImage, setLastGeneratedImage] = useState<string[] | null>(null);
     const [lastGenerationDuration, setLastGenerationDuration] = useState<number>(0);
     const [resultRevealed, setResultRevealed] = useState(false); // For NSFW blur toggle
     const [showResultPreview, setShowResultPreview] = useState(false); // For full screen preview
@@ -628,9 +632,13 @@ export default function App() {
     };
 
     const handleUseResult = async (targetView: 'edit' | 'video' = 'edit') => {
-        if (!lastGeneratedImage) return;
+        if (!lastGeneratedImage || lastGeneratedImage.length === 0) return;
+
+        // Use the first image for now
+        const targetUrl = lastGeneratedImage[0];
+
         try {
-            const response = await fetch(lastGeneratedImage);
+            const response = await fetch(targetUrl);
             if (!response.ok) throw new Error("File missing");
             const blob = await response.blob();
 
@@ -662,13 +670,7 @@ export default function App() {
         }
     };
 
-    const handleResultClick = () => {
-        if (settings.nsfwMode && !resultRevealed) {
-            setResultRevealed(true);
-        } else {
-            setShowResultPreview(true);
-        }
-    };
+
 
     const handleClearResult = () => {
         setLastGeneratedImage(null);
@@ -742,8 +744,10 @@ export default function App() {
                     }
 
                     // If we deleted the last generated image, clear the preview
-                    if (lastGeneratedImage && lastGeneratedImage.includes(filename)) {
-                        setLastGeneratedImage(null);
+                    // If we deleted the last generated image, remove it from view
+                    if (lastGeneratedImage && lastGeneratedImage.length > 0) {
+                        const newLast = lastGeneratedImage.filter(img => !img.includes(filename));
+                        setLastGeneratedImage(newLast.length > 0 ? newLast : null);
                     }
                 } else {
                     throw new Error(data.error || "Unknown error");
@@ -1016,38 +1020,39 @@ export default function App() {
                 }
             }
 
-            // 4. Queue
-            const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
-            currentPromptIdRef.current = promptId;
+            // 4. Queue Loop
+            activeBatchIdsRef.current.clear(); // Reset active batch
+            const newBatchIds = new Set<string>();
 
-            // Save to Prompt History
-            if (view === 'generate' && currentPrompt.trim()) {
-                setPromptHistory(prev => {
-                    const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
-                    return newHistory;
-                });
+            for (let i = 0; i < batchCount; i++) {
+                // For subsequent iterations, we might want to vary seed
+                if (i > 0 && settings.randomizeSeed) {
+                    currentSeed = Math.floor(Math.random() * 1000000000000);
+                    // Update workflow seed
+                    if (view === 'generate') workflow["3"].inputs.seed = currentSeed;
+                    // Video/Edit workflows might handle seeds differently or rely on initial set
+                }
+
+                const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
+                newBatchIds.add(promptId);
+                activeBatchIdsRef.current.add(promptId);
+                currentPromptIdRef.current = promptId; // Track latest for polling fallback (simplified)
+
+                // Save to Prompt History (only once)
+                if (i === 0 && view === 'generate' && currentPrompt.trim()) {
+                    setPromptHistory(prev => {
+                        const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
+                        return newHistory;
+                    });
+                }
             }
 
-            // Check if we ALREADY received the success message (race condition fix)
-            if (pendingSuccessIds.current.has(promptId)) {
-                setStatus(GenerationStatus.FINISHED);
-                setStatusMessage("Finished");
-                setProgress(100);
-                fetchGenerationResult(promptId);
-                pendingSuccessIds.current.delete(promptId);
-                // Don't return here, we still want cleanup to happen in finally
-            } else {
-                // Check history immediately in case it was cached
-                try {
-                    const historyData = await getHistory(promptId, settings.serverAddress);
-                    if (historyData && historyData[promptId]) {
-                        setStatus(GenerationStatus.FINISHED);
-                        setStatusMessage("Finished");
-                        setProgress(100);
-                        fetchGenerationResult(promptId);
-                    }
-                } catch (e) {
-                    // History not ready yet
+            // Check if we ALREADY received success messages (race condition fix)
+            // Iterate over ALL active IDs
+            for (const pid of newBatchIds) {
+                if (pendingSuccessIds.current.has(pid)) {
+                    fetchGenerationResult(pid);
+                    pendingSuccessIds.current.delete(pid);
                 }
             }
 
@@ -1104,7 +1109,8 @@ export default function App() {
     };
 
     const fetchGenerationResult = async (promptId: string) => {
-        if (status === GenerationStatus.FINISHED && lastGeneratedImage) return;
+        // Remove from active batch
+        activeBatchIdsRef.current.delete(promptId);
 
         try {
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -1151,8 +1157,21 @@ export default function App() {
 
                 const duration = Date.now() - startTimeRef.current;
                 setLastGenerationDuration(duration);
-                setLastGeneratedImage(imageUrl);
+                // Append to existing images or create new array
+                setLastGeneratedImage(prev => {
+                    const cleanPrev = Array.isArray(prev) ? prev : [];
+                    return [...cleanPrev, imageUrl];
+                });
                 setResultRevealed(false);
+
+                // If this was the LAST item in the batch, mark as finished
+                if (activeBatchIdsRef.current.size === 0) {
+                    setStatus(GenerationStatus.FINISHED);
+                    setStatusMessage("Finished");
+                    setProgress(100);
+                } else {
+                    setStatusMessage(`Generated ${batchCount - activeBatchIdsRef.current.size}/${batchCount}`);
+                }
 
                 const newItem: HistoryItem = {
                     id: promptId,
@@ -1505,6 +1524,29 @@ export default function App() {
                             </div>
                         )}
 
+                        {/* GENERATE MODE: Batch Count Slider */}
+                        {view === 'generate' && showLoraConfig && (
+                            <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300 mb-2">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-medium text-gray-500">Batch Count</span>
+                                    <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{batchCount}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="4"
+                                    step="1"
+                                    value={batchCount}
+                                    onChange={(e) => setBatchCount(parseInt(e.target.value))}
+                                    className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                                    <span>1</span>
+                                    <span>4</span>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Prompt Input (Common) */}
                         <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
 
@@ -1597,24 +1639,16 @@ export default function App() {
                         )}
 
                         {/* Last Generated Result Card (Non-Sticky) */}
-                        {lastGeneratedImage && !showResultPreview && (
+                        {/* Last Generated Result Card (Non-Sticky) */}
+                        {lastGeneratedImage && lastGeneratedImage.length > 0 && !showResultPreview && (
                             <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
                                 <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                                     <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
-                                        <Check size={12} /> Generation Complete
+                                        <Check size={12} /> Generation Complete {Array.isArray(lastGeneratedImage) && lastGeneratedImage.length > 1 ? `(${lastGeneratedImage.length})` : ''}
                                     </span>
                                     <div className="flex gap-4">
-                                        <a
-                                            href={lastGeneratedImage}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
-                                            title="Open in New Tab"
-                                        >
-                                            <ExternalLink size={14} />
-                                        </a>
-                                        {/* Only show "Use as Input" buttons if it's an image */}
-                                        {!lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
+                                        {/* Only show "Use as Input" buttons if first image is an image */}
+                                        {Array.isArray(lastGeneratedImage) && !lastGeneratedImage[0].match(/\.(mp4|webm|mov)($|\?|&)/i) && (
                                             <>
                                                 <button onClick={() => handleUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
                                                     <PenTool size={14} />
@@ -1629,41 +1663,35 @@ export default function App() {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="relative h-64 bg-gray-100 dark:bg-black/50 group cursor-pointer" onClick={handleResultClick}>
-                                    {lastGeneratedImage.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
-                                        <video
-                                            src={lastGeneratedImage}
-                                            className="w-full h-full object-contain"
-                                            controls
-                                            autoPlay
-                                            loop
-                                            muted
-                                        />
-                                    ) : (
-                                        <>
-                                            <img
-                                                src={lastGeneratedImage}
-                                                className={`w-full h-full object-contain ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
-                                                alt="Result"
-                                            />
-                                            {settings.nsfwMode && !resultRevealed && (
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <EyeOff className="text-gray-800 dark:text-white opacity-80" size={24} />
+                                <div className={`relative ${Array.isArray(lastGeneratedImage) && lastGeneratedImage.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'h-64'}`}>
+                                    {Array.isArray(lastGeneratedImage) && lastGeneratedImage.map((imgUrl, idx) => (
+                                        <div key={idx} className={`relative ${lastGeneratedImage.length > 1 ? 'aspect-square' : 'h-full'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={() => {
+                                            window.open(imgUrl, '_blank');
+                                        }}>
+                                            {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                                <video
+                                                    src={imgUrl}
+                                                    className="w-full h-full object-cover"
+                                                    autoPlay
+                                                    loop
+                                                    muted
+                                                />
+                                            ) : (
+                                                <img
+                                                    src={imgUrl}
+                                                    className={`w-full h-full object-cover ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
+                                                    alt={`Result ${idx + 1}`}
+                                                />
+                                            )}
+                                            {/* Duration Badge (Only on first item to avoid clutter) */}
+                                            {idx === 0 && lastGenerationDuration > 0 && (
+                                                <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                                    <Clock size={10} />
+                                                    {(lastGenerationDuration / 1000).toFixed(1)}s
                                                 </div>
                                             )}
-                                            <div className="absolute inset-0 flex items-center justify-center bg-white/30 dark:bg-black/0 group-hover:bg-white/40 dark:group-hover:bg-black/20 transition-colors pointer-events-none">
-                                                <Maximize2 className="text-gray-900 dark:text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* Duration Badge */}
-                                    {lastGenerationDuration > 0 && (
-                                        <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                            <Clock size={10} />
-                                            {(lastGenerationDuration / 1000).toFixed(1)}s
                                         </div>
-                                    )}
+                                    ))}
                                 </div>
                             </div>
                         )}
@@ -1938,7 +1966,7 @@ export default function App() {
             {
                 showResultPreview && lastGeneratedImage && (
                     <CompareModal
-                        resultImage={lastGeneratedImage}
+                        resultImage={Array.isArray(lastGeneratedImage) ? lastGeneratedImage[0] : lastGeneratedImage}
                         inputImage={getComparisonInputUrl()}
                         onClose={() => setShowResultPreview(false)}
                         onUseResult={handleUseResult}
