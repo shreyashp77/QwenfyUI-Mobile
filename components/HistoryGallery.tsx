@@ -284,8 +284,8 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                         )}
                                     </div>
 
-                                    {/* Compare Button (if input exists) */}
-                                    {item.inputFilename && (
+                                    {/* Compare Button (if input exists and not a video) */}
+                                    {item.inputFilename && !item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
                                         <div className="pt-1">
                                             <button
                                                 onClick={(e) => handleCompare(e, item)}
@@ -307,12 +307,14 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                         >
                                             <ExternalLink size={16} />
                                         </a>
-                                        <button
-                                            onClick={() => onSelect(item)}
-                                            className={`flex items-center gap-1 text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 font-medium text-xs`}
-                                        >
-                                            Use <ArrowUpRight size={16} />
-                                        </button>
+                                        {!item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
+                                            <button
+                                                onClick={() => onSelect(item)}
+                                                className={`flex items-center gap-1 text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 font-medium text-xs`}
+                                            >
+                                                Use <ArrowUpRight size={16} />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
