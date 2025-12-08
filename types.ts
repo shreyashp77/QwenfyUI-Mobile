@@ -4,6 +4,9 @@ export interface ComfyInput {
   [key: string]: string | number | boolean | (string | number)[] | undefined;
 }
 
+export type ViewMode = 'home' | 'edit' | 'generate' | 'video';
+
+
 export interface ComfyNode {
   inputs: ComfyInput;
   class_type: string;

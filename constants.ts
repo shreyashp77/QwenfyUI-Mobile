@@ -1,5 +1,12 @@
 
-import { ComfyWorkflow } from "./types";
+import { ComfyWorkflow, ThemeColor } from "./types";
+
+export const THEME_OPTIONS: ThemeColor[] = [
+  'purple', 'violet', 'fuchsia', 'pink', 'rose', 'red',
+  'orange', 'amber', 'yellow', 'lime', 'green', 'emerald',
+  'teal', 'cyan', 'sky', 'blue', 'indigo'
+];
+
 
 export const SAMPLER_OPTIONS = [
   "euler", "euler_ancestral", "heun", "heunpp2", "dpm_2", "dpm_2_ancestral",

@@ -1,127 +1,38 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Zap, Loader2, RefreshCw, AlertCircle, Cpu, ChevronDown, ChevronRight, SlidersHorizontal, Square, Plus, Monitor, Smartphone, Sparkles, Tablet, Trash2, History } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES, VIDEO_RESOLUTIONS } from './constants';
-import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
+import { AlertCircle } from 'lucide-react';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS } from './constants';
+import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
-import LoraControl from './components/LoraControl';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
-import PromptManager from './components/PromptManager';
 import ServerImageSelector from './components/ServerImageSelector';
 import CompareModal from './components/CompareModal';
 import Header from './components/Header';
 import SettingsPanel from './components/SettingsPanel';
 import HomeScreen from './components/HomeScreen';
 import ResultCard from './components/ResultCard';
+import ModelSelector from './components/ModelSelector';
+import PromptInput from './components/PromptInput';
+import AdvancedOptions, { ASPECT_RATIOS } from './components/AdvancedOptions';
+import GenerationBottomBar from './components/GenerationBottomBar';
+// Hooks & Utils
+import { useAppSettings } from './hooks/useAppSettings';
+import { generateClientId } from './utils/idUtils';
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
 import { sound } from './services/soundService';
 
-const getHostname = () => window.location.hostname || 'localhost';
-const DEFAULT_SERVER = `http://${getHostname()}:8188`;
-// Using specific model name to prevent KeyError: 'weight' in Nunchaku node if fetch fails
 const DEFAULT_MODEL = "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors";
-
-type ViewMode = 'home' | 'edit' | 'generate' | 'video';
-
-const THEME_OPTIONS: ThemeColor[] = [
-    'purple', 'violet', 'fuchsia', 'pink', 'rose', 'red',
-    'orange', 'amber', 'yellow', 'lime', 'green', 'emerald',
-    'teal', 'cyan', 'sky', 'blue', 'indigo'
-];
-
-
-
-const ASPECT_RATIOS = [
-    { id: '1:1', width: 1024, height: 1024, label: '1:1', icon: Square },
-    { id: '9:16', width: 720, height: 1280, label: '9:16', icon: Smartphone },
-    { id: '16:9', width: 1280, height: 720, label: '16:9', icon: Monitor },
-    { id: '4:3', width: 1152, height: 864, label: '4:3', icon: Monitor },
-    { id: '3:4', width: 864, height: 1152, label: '3:4', icon: Tablet },
-];
-
-// Helper to generate a random client ID
-const generateClientId = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
-
-// Color manipulation helpers
-const hexToRgb = (hex: string) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
-};
-
-const rgbToHex = (r: number, g: number, b: number) => {
-    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-};
-
-const adjustBrightness = (hex: string, percent: number) => {
-    const rgb = hexToRgb(hex);
-    if (!rgb) return hex;
-
-    // Linear interpolation towards black (negative percent) or white (positive percent)
-    const target = percent > 0 ? 255 : 0;
-    const p = Math.abs(percent / 100);
-
-    const newR = Math.round(rgb.r + (target - rgb.r) * p);
-    const newG = Math.round(rgb.g + (target - rgb.g) * p);
-    const newB = Math.round(rgb.b + (target - rgb.b) * p);
-
-    return rgbToHex(newR, newG, newB);
-};
 
 export default function App() {
     // --- State ---
     const [view, setView] = useState<ViewMode>('home');
     const viewRef = useRef<ViewMode>('home'); // Ref to track view for stale closures
 
-    const [settings, setSettings] = useState<AppSettings>(() => {
-        // Load settings from local storage to persist user preferences across refreshes
-        const saved = localStorage.getItem('qwen_settings');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                // Ensure darkMode exists if loading old settings
-                if (parsed.darkMode === undefined) parsed.darkMode = true;
-                if (parsed.enableRemoteInput === undefined) parsed.enableRemoteInput = false;
-                if (parsed.randomizeSeed === undefined) parsed.randomizeSeed = true;
-                if (parsed.enableComparison === undefined) parsed.enableComparison = false;
-                // Migration: If either was enabled, enable feedback
-                if (parsed.enableFeedback === undefined) {
-                    parsed.enableFeedback = (parsed.enableHaptics !== false) || (parsed.enableSound !== false);
-                }
-
-                // Repair invalid server address from bad local storage state
-                if (!parsed.serverAddress || parsed.serverAddress.includes('://:')) {
-                    parsed.serverAddress = DEFAULT_SERVER;
-                }
-
-                return parsed;
-            } catch (e) {
-                console.error("Failed to parse settings", e);
-            }
-        }
-        return {
-            serverAddress: DEFAULT_SERVER,
-            nsfwMode: false,
-            enableRemoteInput: false,
-            darkMode: true,
-            theme: THEME_OPTIONS[Math.floor(Math.random() * THEME_OPTIONS.length)],
-            customColor: '#ffffff',
-            randomizeSeed: true,
-            enableComparison: false,
-            enableFeedback: true,
-        };
-    });
+    // Extracted Settings Logic
+    const { settings, setSettings } = useAppSettings();
 
     const [clientId] = useState(() => generateClientId());
     const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -150,21 +61,21 @@ export default function App() {
     // Revised Images State (Only for Edit Mode)
     const [images, setImages] = useState<(InputImage | null)[]>([null, null, null]);
 
-
-
     // Server Image Selection
     const [showServerSelector, setShowServerSelector] = useState<{ show: boolean, index: number }>({ show: false, index: -1 });
     const [availableServerImages, setAvailableServerImages] = useState<string[]>([]);
 
     // LoRAs
     const [availableLoras, setAvailableLoras] = useState<string[]>([]);
-    const [showLoraConfig, setShowLoraConfig] = useState(false);
     const [loras, setLoras] = useState<LoraSelection[]>([]); // Dynamic LoRA list
 
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
     const [videoDuration, setVideoDuration] = useState(3);
     const [videoResolution, setVideoResolution] = useState('480x832');
+
+
+
 
     // Execution
     const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
@@ -213,37 +124,8 @@ export default function App() {
         viewRef.current = view;
     }, [view]);
 
-    // Apply Dark Mode to HTML root
-    useEffect(() => {
-        if (settings.darkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [settings.darkMode]);
-
-    // Apply Custom Theme CSS Variables
-    useEffect(() => {
-        if (settings.theme === 'custom' && settings.customColor) {
-            const root = document.documentElement;
-            const base = settings.customColor;
-
-            // Generate shades
-            root.style.setProperty('--theme-500', base);
-            root.style.setProperty('--theme-400', adjustBrightness(base, 15));
-            root.style.setProperty('--theme-300', adjustBrightness(base, 30));
-            root.style.setProperty('--theme-200', adjustBrightness(base, 50));
-
-            root.style.setProperty('--theme-600', adjustBrightness(base, -10));
-            root.style.setProperty('--theme-700', adjustBrightness(base, -20));
-            root.style.setProperty('--theme-900', adjustBrightness(base, -40));
-        }
-    }, [settings.theme, settings.customColor]);
-
-    // Persist settings
-    useEffect(() => {
-        localStorage.setItem('qwen_settings', JSON.stringify(settings));
-    }, [settings]);
+    // Color manipulation and ID generation logic moved to utils/
+    // Persistence and Theme Effects moved to useAppSettings hook
 
     // Check connection on mount and when server address changes
     useEffect(() => {
@@ -1233,22 +1115,12 @@ export default function App() {
                         {view === 'edit' && (
                             <>
                                 {/* Model Selection */}
-                                <div className="bg-white dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-800 transition-colors duration-300 shadow-sm">
-                                    <label className="block text-xs font-medium text-gray-500 mb-2">Model</label>
-                                    <div className="relative">
-                                        <Cpu size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                        <select
-                                            value={selectedModel}
-                                            onChange={(e) => setSelectedModel(e.target.value)}
-                                            className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-8 pr-8 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                        >
-                                            {availableModels.map(m => (
-                                                <option key={m} value={m}>{m}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                    </div>
-                                </div>
+                                <ModelSelector
+                                    selectedModel={selectedModel}
+                                    setSelectedModel={setSelectedModel}
+                                    availableModels={availableModels}
+                                    theme={settings.theme}
+                                />
 
                                 {/* Image Inputs */}
                                 <div className="grid grid-cols-3 gap-3">
@@ -1291,55 +1163,13 @@ export default function App() {
 
 
                         {/* Prompt Input (Common) */}
-                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
-
-
-
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-xs font-medium text-gray-500">Positive Prompt</span>
-                                {settings.enableRemoteInput && (
-                                    <PromptManager
-                                        currentPrompt={prompt}
-                                        serverAddress={settings.serverAddress}
-                                        onLoadPrompt={setPrompt}
-                                        theme={settings.theme}
-                                        workflow={view}
-                                    />
-                                )}
-                            </div>
-                            {/* Prompt History (Generate Mode Only) */}
-                            {view === 'generate' && promptHistory.length > 0 && (
-                                <div className="mb-2 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                                    {promptHistory.map((p, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => setPrompt(p)}
-                                            className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:bg-${settings.theme}-50 dark:hover:bg-${settings.theme}-900/20 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-200 dark:hover:border-${settings.theme}-800 transition-all truncate max-w-[150px] flex items-center gap-1`}
-                                            title={p}
-                                        >
-                                            <History size={10} />
-                                            {p}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                            <textarea
-                                value={prompt}
-                                onChange={(e) => setPrompt(e.target.value)}
-                                placeholder={view === 'edit' ? "Describe your edit..." : view === 'video' ? "Describe the video you want to generate..." : "Describe the image you want to generate..."}
-                                className={`w-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 rounded p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-${settings.theme}-500 outline-none border border-gray-300 dark:border-gray-800 placeholder-gray-400 dark:placeholder-gray-600 resize-none transition-colors`}
-                            />
-                            <div className="flex justify-end mt-2">
-                                <button
-                                    onClick={() => setPrompt("")}
-                                    className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1"
-                                >
-                                    <Trash2 size={12} /> Clear Prompt
-                                </button>
-                            </div>
-
-
-                        </div>
+                        <PromptInput
+                            prompt={prompt}
+                            setPrompt={setPrompt}
+                            settings={settings}
+                            promptHistory={promptHistory}
+                            view={view}
+                        />
 
 
 
@@ -1396,258 +1226,35 @@ export default function App() {
                         )}
 
                         {/* Config (Collapsible) */}
-                        <div className="border border-gray-200 dark:border-gray-800 rounded-lg bg-white dark:bg-gray-900/50 overflow-hidden shadow-sm transition-colors duration-300">
-                            <button
-                                onClick={() => setShowLoraConfig(!showLoraConfig)}
-                                className="w-full flex items-center justify-between p-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                            >
-                                <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                                    <SlidersHorizontal size={16} />
-                                    <span className="text-sm font-medium">Advanced Configuration</span>
-                                </div>
-                                {showLoraConfig ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
-                            </button>
-
-                            {showLoraConfig && (
-                                <div className="p-4 space-y-4 animate-fade-in border-t border-gray-200 dark:border-gray-800">
-
-                                    {/* VIDEO MODE: Advanced Options */}
-                                    {view === 'video' && (
-                                        <>
-                                            {/* Resolution Control */}
-                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                                <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Resolution</span>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    {VIDEO_RESOLUTIONS.map(res => (
-                                                        <button
-                                                            key={res.id}
-                                                            onClick={() => setVideoResolution(res.id)}
-                                                            className={`py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${videoResolution === res.id
-                                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                                }`}
-                                                        >
-                                                            {res.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* Length Control */}
-                                            <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Length (Seconds)</span>
-                                                    <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{videoDuration}s</span>
-                                                </div>
-                                                <input
-                                                    type="range"
-                                                    min="1"
-                                                    max="5"
-                                                    step="1"
-                                                    value={videoDuration}
-                                                    onChange={(e) => setVideoDuration(parseInt(e.target.value))}
-                                                    className={`w-full accent-${settings.theme}-600 cursor-pointer`}
-                                                />
-                                                <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                                                    <span>1s</span>
-                                                    <span>2s</span>
-                                                    <span>3s</span>
-                                                    <span>4s</span>
-                                                    <span>5s</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Extend Toggle */}
-                                            <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Extend Video</span>
-                                                    <span className="text-[10px] text-gray-500">Enable RIFE VFI interpolation</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => setExtendVideo(!extendVideo)}
-                                                    className={`w-12 h-6 rounded-full relative transition-colors ${extendVideo ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                                                >
-                                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${extendVideo ? 'translate-x-6' : ''}`} />
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    {/* Resolution Control (Generate/Edit) */}
-                                    {view !== 'video' && (
-                                        <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
-                                            <div className="flex gap-2 flex-wrap">
-                                                {ASPECT_RATIOS.map(res => {
-                                                    const Icon = res.icon;
-                                                    return (
-                                                        <button
-                                                            key={res.id}
-                                                            onClick={() => setSelectedResolution(res.id)}
-                                                            className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === res.id
-                                                                ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                                : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                                }`}
-                                                        >
-                                                            <Icon size={12} className="hidden sm:block" />
-                                                            {res.label}
-                                                        </button>
-                                                    );
-                                                })}
-                                                {/* Custom Button */}
-                                                <button
-                                                    onClick={() => setSelectedResolution('custom')}
-                                                    className={`flex-1 py-2 px-1 flex items-center justify-center gap-1 text-[10px] sm:text-xs rounded-md border transition-all ${selectedResolution === 'custom'
-                                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 border-${settings.theme}-500 text-${settings.theme}-700 dark:text-${settings.theme}-300 font-medium shadow-sm`
-                                                        : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                                        }`}
-                                                >
-                                                    <Monitor size={12} className="hidden sm:block" />
-                                                    Custom
-                                                </button>
-                                            </div>
-
-                                            {selectedResolution === 'custom' && (
-                                                <div className="flex gap-3 mt-3 animate-fade-in">
-                                                    <div className="flex-1">
-                                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Width</label>
-                                                        <input
-                                                            type="number"
-                                                            value={customDimensions.width}
-                                                            onChange={(e) => setCustomDimensions(prev => ({ ...prev, width: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-end pb-2 text-gray-400">x</div>
-                                                    <div className="flex-1">
-                                                        <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1">Height</label>
-                                                        <input
-                                                            type="number"
-                                                            value={customDimensions.height}
-                                                            onChange={(e) => setCustomDimensions(prev => ({ ...prev, height: e.target.value === '' ? '' : parseInt(e.target.value) }))}
-                                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-
-                                    {/* Seed Control */}
-                                    <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Seed</span>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => setSettings({ ...settings, randomizeSeed: !settings.randomizeSeed })}
-                                                    className={`p-1.5 rounded text-xs flex items-center gap-1 transition-colors ${settings.randomizeSeed
-                                                        ? `bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 text-${settings.theme}-600 dark:text-${settings.theme}-300 font-medium`
-                                                        : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                                                        }`}
-                                                    title="Auto-randomize seed on generate"
-                                                >
-                                                    <Sparkles size={12} /> Auto
-                                                </button>
-                                                <button onClick={randomizeSeed} className={`text-${settings.theme}-500 dark:text-${settings.theme}-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-300`}>
-                                                    <RefreshCw size={16} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            value={seed}
-                                            onChange={(e) => setSeed(parseInt(e.target.value) || 0)}
-                                            className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded p-2 text-sm text-center font-mono focus:border-${settings.theme}-500 outline-none text-gray-800 dark:text-gray-200 transition-colors`}
-                                        />
-                                    </div>
-
-                                    {/* Steps Control (Generate Mode Only) */}
-                                    {view === 'generate' && (
-                                        <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Steps</span>
-                                                <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{steps}</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="1"
-                                                max="50"
-                                                value={steps}
-                                                onChange={(e) => setSteps(parseInt(e.target.value))}
-                                                className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
-                                            />
-                                        </div>
-                                    )}
-
-                                    {/* Sampler & Scheduler Control */}
-                                    {view !== 'video' && (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Sampler</label>
-                                                <div className="relative">
-                                                    <select
-                                                        value={selectedSampler}
-                                                        onChange={(e) => setSelectedSampler(e.target.value)}
-                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                                    >
-                                                        {SAMPLER_OPTIONS.map(s => (
-                                                            <option key={s} value={s}>{s}</option>
-                                                        ))}
-                                                    </select>
-                                                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                                </div>
-                                            </div>
-
-                                            <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
-                                                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Scheduler</label>
-                                                <div className="relative">
-                                                    <select
-                                                        value={selectedScheduler}
-                                                        onChange={(e) => setSelectedScheduler(e.target.value)}
-                                                        className={`w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-xs text-gray-800 dark:text-gray-200 py-2 pl-2 pr-6 appearance-none focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                                    >
-                                                        {SCHEDULER_OPTIONS.map(s => (
-                                                            <option key={s} value={s}>{s}</option>
-                                                        ))}
-                                                    </select>
-                                                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* LoRAs (Only in Edit Mode) */}
-                                    {view === 'edit' && (
-                                        <div className="space-y-3">
-                                            {loras.map((lora, index) => (
-                                                <LoraControl
-                                                    key={lora.id}
-                                                    id={lora.id}
-                                                    label={`LoRA ${index + 1}`}
-                                                    enabled={lora.enabled}
-                                                    strength={lora.strength}
-                                                    availableLoras={availableLoras}
-                                                    selectedLoraName={lora.name}
-                                                    onUpdate={handleUpdateLora}
-                                                    onDelete={handleDeleteLora}
-                                                    theme={settings.theme}
-                                                />
-                                            ))}
-                                            {settings.enableRemoteInput && (
-                                                <button
-                                                    onClick={handleAddLora}
-                                                    disabled={loras.length >= 10}
-                                                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                                                >
-                                                    <Plus size={18} /> Add LoRA
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        <AdvancedOptions
+                            view={view}
+                            settings={settings}
+                            onSettingsChange={setSettings}
+                            videoResolution={videoResolution}
+                            setVideoResolution={setVideoResolution}
+                            videoDuration={videoDuration}
+                            setVideoDuration={setVideoDuration}
+                            extendVideo={extendVideo}
+                            setExtendVideo={setExtendVideo}
+                            selectedResolution={selectedResolution}
+                            setSelectedResolution={setSelectedResolution}
+                            customDimensions={customDimensions}
+                            setCustomDimensions={setCustomDimensions}
+                            seed={seed}
+                            setSeed={setSeed}
+                            randomizeSeedFunction={randomizeSeed}
+                            steps={steps}
+                            setSteps={setSteps}
+                            selectedSampler={selectedSampler}
+                            setSelectedSampler={setSelectedSampler}
+                            selectedScheduler={selectedScheduler}
+                            setSelectedScheduler={setSelectedScheduler}
+                            loras={loras}
+                            availableLoras={availableLoras}
+                            handleAddLora={handleAddLora}
+                            handleUpdateLora={handleUpdateLora}
+                            handleDeleteLora={handleDeleteLora}
+                        />
 
                         {/* Error Message */}
                         {errorMsg && (
@@ -1671,6 +1278,7 @@ export default function App() {
                         onUseResult={handleUseResult}
                         nsfwMode={settings.nsfwMode}
                         theme={settings.theme}
+                        isVideo={view === 'video'}
                     />
                 )
             }
@@ -1678,62 +1286,15 @@ export default function App() {
             {/* Bottom Bar: Generate Button & Status */}
             {
                 view !== 'home' && (
-                    <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
-                        <button
-                            onClick={() => {
-                                handleGenerateClick();
-                                haptic.trigger('heavy');
-                                sound.play('click');
-                            }}
-                            disabled={status !== GenerationStatus.IDLE && status !== GenerationStatus.FINISHED && status !== GenerationStatus.ERROR}
-                            className={`flex-1 relative h-12 rounded-xl font-bold text-white shadow-lg overflow-hidden transition-all
-                    ${(status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR)
-                                    ? `bg-${settings.theme}-600 hover:bg-${settings.theme}-500 hover:scale-[1.02] active:scale-[0.98]`
-                                    : 'bg-gray-400 dark:bg-gray-800 cursor-not-allowed'}`}
-                        >
-                            {/* Progress Bar Background */}
-                            {(status === GenerationStatus.EXECUTING || status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED) && (
-                                <div
-                                    className={`absolute left-0 top-0 h-full bg-${settings.theme}-700 transition-all duration-300 ease-out`}
-                                    style={{ width: `${progress}%` }}
-                                />
-                            )}
-
-                            <div className="relative z-10 flex items-center justify-center gap-2 w-full h-full">
-                                {status === GenerationStatus.IDLE || status === GenerationStatus.FINISHED || status === GenerationStatus.ERROR ? (
-                                    <>
-                                        <Zap size={20} className={status === GenerationStatus.FINISHED ? "text-yellow-300" : ""} />
-                                        <span>{view === 'edit' ? 'Edit Image' : 'Generate'}</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        {status === GenerationStatus.UPLOADING && <span className="animate-pulse">{statusMessage || "Uploading..."}</span>}
-                                        {status === GenerationStatus.QUEUED && <span className="animate-pulse">{statusMessage || "Queued..."}</span>}
-                                        {status === GenerationStatus.EXECUTING && (
-                                            <>
-                                                <Loader2 size={20} className="animate-spin" />
-                                                <span>
-                                                    {/* Show percentage if generating, otherwise show granular status message */}
-                                                    {progress > 0 ? `${progress}%` : (statusMessage || "Processing...")}
-                                                </span>
-                                            </>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        </button>
-
-                        {/* Stop Button - Only visible when busy */}
-                        {(status === GenerationStatus.EXECUTING || status === GenerationStatus.QUEUED) && (
-                            <button
-                                onClick={handleInterrupt}
-                                className="h-12 w-12 flex items-center justify-center bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800 transition-colors"
-                                title="Stop Generation"
-                            >
-                                <Square size={20} fill="currentColor" />
-                            </button>
-                        )}
-                    </div>
+                    <GenerationBottomBar
+                        view={view}
+                        status={status}
+                        progress={progress}
+                        statusMessage={statusMessage}
+                        handleGenerateClick={handleGenerateClick}
+                        handleInterrupt={handleInterrupt}
+                        settings={settings}
+                    />
                 )
             }
             {/* History Modal */}

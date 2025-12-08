@@ -10,16 +10,20 @@ interface CompareModalProps {
     onUseResult: () => void;
     nsfwMode: boolean;
     theme: ThemeColor;
+    isVideo?: boolean;
 }
 
-const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, onClose, onUseResult, nsfwMode, theme }) => {
+const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, onClose, onUseResult, nsfwMode, theme, isVideo = false }) => {
     const [sliderPosition, setSliderPosition] = useState(50); // 0 to 100 percentage
     const [isDragging, setIsDragging] = useState(false);
     const [resultRevealed, setResultRevealed] = useState(false);
     const [inputError, setInputError] = useState(false);
     const sliderContainerRef = useRef<HTMLDivElement>(null);
 
-    const showComparison = Boolean(inputImage);
+    // Disable comparison for video for now to ensure layout stability, 
+    // or we can allow it if the input is an image. 
+    // For now, let's keep it simple: if video, just show video, no comparison slider overlap yet.
+    const showComparison = Boolean(inputImage) && !isVideo;
 
     const handleMove = (clientX: number) => {
         if (sliderContainerRef.current) {
@@ -62,21 +66,37 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
 
             <div
                 ref={sliderContainerRef}
-                className="relative inline-block overflow-hidden rounded-lg shadow-2xl bg-black pb-20"
+                className="relative inline-block overflow-hidden rounded-lg shadow-2xl bg-black pb-0 md:pb-0" // Removed pb-20 which might have been for buttons, but flex justification is better
                 onTouchMove={showComparison ? handleTouchMove : undefined}
                 onTouchEnd={showComparison ? () => setIsDragging(false) : undefined}
                 onMouseMove={showComparison ? handleMouseMove : undefined}
                 onMouseUp={showComparison ? () => setIsDragging(false) : undefined}
                 onMouseLeave={showComparison ? () => setIsDragging(false) : undefined}
-                style={{ touchAction: 'none' }} // Prevent page scroll while dragging
+                style={{
+                    touchAction: 'none',
+                    maxHeight: '85vh',
+                    maxWidth: '100vw'
+                }}
             >
-                {/* 1. Background Layer: Result Image (Acts as the strut/layout definition) */}
-                <img
-                    src={resultImage}
-                    alt="Result"
-                    className={`block max-w-full max-h-[85vh] object-contain select-none ${nsfwMode && !resultRevealed ? 'blur-2xl' : ''}`}
-                    draggable={false}
-                />
+                {/* 1. Background Layer: Result (Image or Video) */}
+                {isVideo ? (
+                    <video
+                        src={resultImage}
+                        className={`block max-w-full max-h-[85vh] object-contain select-none shadow-2xl ${nsfwMode && !resultRevealed ? 'blur-2xl' : ''}`}
+                        controls
+                        autoPlay
+                        loop
+                        playsInline
+                    />
+                ) : (
+                    <img
+                        src={resultImage}
+                        alt="Result"
+                        className={`block max-w-full max-h-[85vh] object-contain select-none ${nsfwMode && !resultRevealed ? 'blur-2xl' : ''}`}
+                        draggable={false}
+                    />
+                )}
+
 
                 {/* Conditional Comparison Layers */}
                 {showComparison && (
