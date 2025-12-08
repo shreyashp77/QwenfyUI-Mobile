@@ -31,7 +31,10 @@ const ResultCard: React.FC<ResultCardProps> = ({
 
     return (
         <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
-            <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+            <div
+                className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors"
+                onClick={() => setIsMinimized(!isMinimized)}
+            >
                 <span className={`text-xs font-medium text-${theme}-600 dark:text-${theme}-400 flex items-center gap-1`}>
                     <Check size={12} /> Generation Complete {images.length > 1 ? `(${images.length})` : ''}
                 </span>
@@ -39,21 +42,32 @@ const ResultCard: React.FC<ResultCardProps> = ({
                     {/* Only show "Use as Input" buttons if first image is an image */}
                     {!isFirstItemVideo && (
                         <>
-                            <button onClick={() => onUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onUseResult('edit'); }}
+                                className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                                title="Use as Edit Input"
+                            >
                                 <PenTool size={14} />
                             </button>
-                            <button onClick={() => onUseResult('video')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Video Input">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onUseResult('video'); }}
+                                className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                                title="Use as Video Input"
+                            >
                                 <Monitor size={14} />
                             </button>
                         </>
                     )}
                     {isFirstItemVideo && (
-                        <button onClick={() => window.open(images[0], '_blank')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Open in New Tab">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); window.open(images[0], '_blank'); }}
+                            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                            title="Open in New Tab"
+                        >
                             <ExternalLink size={14} />
                         </button>
                     )}
                     <button
-                        onClick={() => setIsMinimized(!isMinimized)}
                         className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
                         title={isMinimized ? "Maximize Result" : "Minimize Result"}
                     >

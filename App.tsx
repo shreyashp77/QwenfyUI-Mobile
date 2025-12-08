@@ -72,7 +72,7 @@ export default function App() {
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
     const [videoDuration, setVideoDuration] = useState(4);
-    const [videoResolution, setVideoResolution] = useState('auto');
+    const [videoResolution, setVideoResolution] = useState('480x832');
 
 
 
@@ -324,6 +324,8 @@ export default function App() {
                             setProgress(100);
                             setStatus(GenerationStatus.FINISHED);
                             setStatusMessage("Finished");
+                            haptic.trigger('success');
+                            sound.play('success');
                             fetchGenerationResult(msg.data.prompt_id);
                         }
                     } else if (msg.type === 'execution_error') {
