@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Zap, Loader2, Square } from 'lucide-react';
+import { Zap, Square } from 'lucide-react';
 import { GenerationStatus, AppSettings } from '../types';
 import { haptic } from '../services/hapticService';
 import { sound } from '../services/soundService';
@@ -19,11 +19,27 @@ const GenerationBottomBar: React.FC<GenerationBottomBarProps> = ({
     view,
     status,
     progress,
-    statusMessage,
+    // statusMessage,
     handleGenerateClick,
     handleInterrupt,
     settings
 }) => {
+    const [elapsedTime, setElapsedTime] = React.useState(0);
+
+    React.useEffect(() => {
+        let interval: any;
+        if (status === GenerationStatus.UPLOADING || status === GenerationStatus.QUEUED || status === GenerationStatus.EXECUTING) {
+            const startTime = Date.now() - elapsedTime;
+            interval = setInterval(() => {
+                setElapsedTime(Date.now() - startTime);
+            }, 100);
+        } else {
+            // Reset timer when finished or idle
+            setElapsedTime(0);
+        }
+        return () => clearInterval(interval);
+    }, [status]);
+
     return (
         <div className="fixed bottom-0 w-full max-w-md bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-t border-gray-200 dark:border-gray-800 p-4 flex gap-3 items-center z-40 transition-colors duration-300">
             <button
@@ -53,19 +69,9 @@ const GenerationBottomBar: React.FC<GenerationBottomBarProps> = ({
                             <span>{view === 'edit' ? 'Edit Image' : 'Generate'}</span>
                         </>
                     ) : (
-                        <>
-                            {status === GenerationStatus.UPLOADING && <span className="animate-pulse">{statusMessage || "Uploading..."}</span>}
-                            {status === GenerationStatus.QUEUED && <span className="animate-pulse">{statusMessage || "Queued..."}</span>}
-                            {status === GenerationStatus.EXECUTING && (
-                                <>
-                                    <Loader2 size={20} className="animate-spin" />
-                                    <span>
-                                        {/* Show percentage if generating, otherwise show granular status message */}
-                                        {progress > 0 ? `${progress}%` : (statusMessage || "Processing...")}
-                                    </span>
-                                </>
-                            )}
-                        </>
+                        <span className="font-mono font-bold text-lg tracking-wider">
+                            {(elapsedTime / 1000).toFixed(1)}s
+                        </span>
                     )}
                 </div>
             </button>

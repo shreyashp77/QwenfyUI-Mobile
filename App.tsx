@@ -71,8 +71,8 @@ export default function App() {
 
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
-    const [videoDuration, setVideoDuration] = useState(3);
-    const [videoResolution, setVideoResolution] = useState('480x832');
+    const [videoDuration, setVideoDuration] = useState(4);
+    const [videoResolution, setVideoResolution] = useState('auto');
 
 
 
@@ -585,6 +585,19 @@ export default function App() {
         }
     }
 
+    const handleFreeMemory = async () => {
+        try {
+            await freeMemory(settings.serverAddress);
+            setToastMessage("VRAM Cleared successfully 🧹");
+            setTimeout(() => setToastMessage(null), 3000);
+            if (haptic.isSupported()) haptic.trigger('light');
+            else sound.play('click');
+        } catch (e) {
+            console.error(e);
+            setErrorMsg("Failed to clear VRAM");
+        }
+    };
+
     const handleDeleteImage = async (filename: string) => {
         if (confirm("Are you sure you want to delete this image? This cannot be undone.")) {
             try {
@@ -969,16 +982,23 @@ export default function App() {
                         }
                     }
 
-                    // Max limit and Alignment
-                    const MAX_DIM = 1280;
-                    if (w > MAX_DIM || h > MAX_DIM) {
-                        const ratio = w / h;
-                        if (w > h) {
-                            w = MAX_DIM;
-                            h = Math.round(MAX_DIM / ratio);
-                        } else {
-                            h = MAX_DIM;
-                            w = Math.round(MAX_DIM * ratio);
+                    // Minimum Resolution Strategy
+                    // If height is small (<= 832), default to 480x832
+                    if (h <= 832) {
+                        w = 480;
+                        h = 832;
+                    } else {
+                        // Max limit and Alignment for larger images
+                        const MAX_DIM = 1280;
+                        if (w > MAX_DIM || h > MAX_DIM) {
+                            const ratio = w / h;
+                            if (w > h) {
+                                w = MAX_DIM;
+                                h = Math.round(MAX_DIM / ratio);
+                            } else {
+                                h = MAX_DIM;
+                                w = Math.round(MAX_DIM * ratio);
+                            }
                         }
                     }
 
@@ -1183,6 +1203,7 @@ export default function App() {
                     settings={settings}
                     onSettingsChange={setSettings}
                     onClearHistory={handleClearHistory}
+                    onFreeMemory={handleFreeMemory}
                 />
             )}
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, X, PenTool, Monitor, ExternalLink } from 'lucide-react';
+import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ResultCardProps {
@@ -20,9 +20,11 @@ const ResultCard: React.FC<ResultCardProps> = ({
     resultRevealed,
     theme,
     onUseResult,
-    onClear,
+    // onClear,
     onImageClick
 }) => {
+    const [isMinimized, setIsMinimized] = React.useState(false);
+
     if (!images || images.length === 0) return null;
 
     const isFirstItemVideo = images[0].match(/\.(mp4|webm|mov)($|\?|&)/i);
@@ -50,42 +52,49 @@ const ResultCard: React.FC<ResultCardProps> = ({
                             <ExternalLink size={14} />
                         </button>
                     )}
-                    <button onClick={onClear} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
-                        <X size={14} />
+                    <button
+                        onClick={() => setIsMinimized(!isMinimized)}
+                        className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                        title={isMinimized ? "Maximize Result" : "Minimize Result"}
+                    >
+                        <ChevronDown size={16} className={`transition-transform duration-200 ${isMinimized ? '' : 'rotate-180'}`} />
                     </button>
                 </div>
             </div>
-            <div className={`relative ${images.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'min-h-[150px] bg-gray-100 dark:bg-black/50'}`}>
-                {images.map((imgUrl, idx) => (
-                    <div key={idx} className={`relative ${images.length > 1 ? 'aspect-square h-full' : 'w-full flex justify-center'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={onImageClick}>
-                        {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
-                            <video
-                                src={imgUrl}
-                                className={images.length > 1 ? "w-full h-full object-cover" : "w-full h-auto max-h-[70vh] object-contain"}
-                                autoPlay
-                                loop
-                                muted
-                            />
-                        ) : (
-                            <img
-                                src={imgUrl}
-                                className={images.length > 1
-                                    ? `w-full h-full object-cover ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
-                                    : `w-full h-auto max-h-[70vh] object-contain ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
-                                }
-                                alt={`Result ${idx + 1}`}
-                            />
-                        )}
-                        {/* Duration Badge (Only on first item to avoid clutter) */}
-                        {idx === 0 && duration > 0 && (
-                            <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                <Clock size={10} />
-                                {(duration / 1000).toFixed(1)}s
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
+
+            {!isMinimized && (
+                <div className={`relative ${images.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'min-h-[150px] bg-gray-100 dark:bg-black/50'}`}>
+                    {images.map((imgUrl, idx) => (
+                        <div key={idx} className={`relative ${images.length > 1 ? 'aspect-square h-full' : 'w-full flex justify-center'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={onImageClick}>
+                            {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                <video
+                                    src={imgUrl}
+                                    className={images.length > 1 ? "w-full h-full object-cover" : "w-full h-auto max-h-[70vh] object-contain"}
+                                    autoPlay
+                                    loop
+                                    muted
+                                />
+                            ) : (
+                                <img
+                                    src={imgUrl}
+                                    className={images.length > 1
+                                        ? `w-full h-full object-cover ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
+                                        : `w-full h-auto max-h-[70vh] object-contain ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
+                                    }
+                                    alt={`Result ${idx + 1}`}
+                                />
+                            )}
+                            {/* Duration Badge (Only on first item to avoid clutter) */}
+                            {idx === 0 && duration > 0 && (
+                                <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                    <Clock size={10} />
+                                    {(duration / 1000).toFixed(1)}s
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Trash2 } from 'lucide-react';
+import { Check, Trash2, Eraser } from 'lucide-react';
 import { AppSettings, ThemeColor } from '../types';
 import { haptic } from '../services/hapticService';
 import { sound } from '../services/soundService';
@@ -35,12 +35,14 @@ interface SettingsPanelProps {
     settings: AppSettings;
     onSettingsChange: (newSettings: AppSettings) => void;
     onClearHistory: () => void;
+    onFreeMemory: () => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
     settings,
     onSettingsChange,
-    onClearHistory
+    onClearHistory,
+    onFreeMemory
 }) => {
     return (
         <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-fade-in absolute w-full z-30 shadow-2xl transition-colors duration-300">
@@ -141,6 +143,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
                     <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
                     <div className="flex flex-col gap-2">
+                        <button
+                            onClick={onFreeMemory}
+                            className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-600 dark:text-orange-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-orange-300 dark:hover:border-orange-800"
+                        >
+                            <Eraser size={14} /> Clear VRAM
+                        </button>
                         <button
                             onClick={onClearHistory}
                             className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800"
