@@ -408,6 +408,7 @@ export const GENERATE_WORKFLOW: ComfyWorkflow = {
 
 
 export const VIDEO_RESOLUTIONS = [
+  { id: 'auto', width: 0, height: 0, label: 'Auto (Match Source)' },
   { id: '480x832', width: 480, height: 832, label: '480x832 (9:16)' },
   { id: '720x1280', width: 720, height: 1280, label: '720x1280 (9:16)' },
   { id: '540x960', width: 540, height: 960, label: '540x960 (9:16)' },

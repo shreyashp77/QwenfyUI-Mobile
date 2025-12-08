@@ -40,12 +40,11 @@ const HistoryThumbnail: React.FC<{
         return (
             <video
                 src={item.imageUrl}
-                className="w-full h-full object-cover"
+                className="w-full h-auto max-h-[500px] object-contain"
                 muted
                 loop
+                autoPlay
                 playsInline
-                onMouseOver={(e) => e.currentTarget.play()}
-                onMouseOut={(e) => e.currentTarget.pause()}
                 onError={() => setHasError(true)}
             />
         );
@@ -56,7 +55,7 @@ const HistoryThumbnail: React.FC<{
             src={item.imageUrl}
             alt={item.prompt}
             onError={() => setHasError(true)}
-            className={`w-full h-full object-cover transition-all duration-300 ${nsfwMode ? 'blur-md' : ''}`}
+            className={`w-full h-auto max-h-[500px] object-contain transition-all duration-300 ${nsfwMode ? 'blur-md' : ''}`}
         />
     );
 };
@@ -222,7 +221,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                 className="flex-shrink-0 w-72 md:w-80 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden snap-center flex flex-col"
                             >
                                 <div
-                                    className="relative cursor-pointer h-72 w-full bg-gray-100 dark:bg-gray-900 overflow-hidden group"
+                                    className="relative cursor-pointer min-h-[200px] bg-gray-100 dark:bg-gray-900 overflow-hidden group flex items-center justify-center bg-black/5"
                                     onClick={() => handleOpenPreview(index)}
                                 >
                                     <HistoryThumbnail

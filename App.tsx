@@ -723,12 +723,20 @@ export default function App() {
         }
     };
 
+    const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.width, height: img.height });
+            img.onerror = reject;
+            img.src = URL.createObjectURL(file);
+        });
+    };
+
     const handleGenerateClick = () => {
         executeGeneration();
-    }
+    };
 
     const executeGeneration = async () => {
-        // Dismiss keyboard on mobile
         if (document.activeElement instanceof HTMLElement) {
             document.activeElement.blur();
         }
@@ -759,7 +767,7 @@ export default function App() {
         setStatus(GenerationStatus.UPLOADING);
         setStatusMessage("Uploading Images...");
         setProgress(0);
-        setLastGeneratedImage(null);
+        // setLastGeneratedImage(null); // Keep previous result
         setResultRevealed(false);
 
         // Track temporary files for cleanup
@@ -930,10 +938,63 @@ export default function App() {
                 workflow["6"].inputs.text = currentPrompt;
 
                 // Resolution
-                const resConfig = VIDEO_RESOLUTIONS.find(r => r.id === videoResolution);
-                if (resConfig) {
-                    workflow["50"].inputs.width = resConfig.width;
-                    workflow["50"].inputs.height = resConfig.height;
+                if (videoResolution === 'auto') {
+                    // Calculate from input image
+                    let w = 720;
+                    let h = 1280;
+
+                    if (images[0].type === 'file' && images[0].file) {
+                        try {
+                            const dims = await getImageDimensions(images[0].file);
+                            w = dims.width;
+                            h = dims.height;
+                        } catch (e) {
+                            console.error("Failed to get image dims", e);
+                        }
+                    } else if (images[0].previewUrl) {
+                        // Try to get dims from preview URL (if preloaded) or fallback
+                        // It's harder to get dims from server file without loading it. 
+                        // For now, let's load the previewUrl in an invisible Image
+                        try {
+                            const img = new Image();
+                            await new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = reject;
+                                img.src = images[0]?.previewUrl || '';
+                            });
+                            w = img.width;
+                            h = img.height;
+                        } catch (e) {
+                            console.error("Failed to load server image for dims", e);
+                        }
+                    }
+
+                    // Max limit and Alignment
+                    const MAX_DIM = 1280;
+                    if (w > MAX_DIM || h > MAX_DIM) {
+                        const ratio = w / h;
+                        if (w > h) {
+                            w = MAX_DIM;
+                            h = Math.round(MAX_DIM / ratio);
+                        } else {
+                            h = MAX_DIM;
+                            w = Math.round(MAX_DIM * ratio);
+                        }
+                    }
+
+                    // Align to 16
+                    w = Math.round(w / 16) * 16;
+                    h = Math.round(h / 16) * 16;
+
+                    workflow["50"].inputs.width = w;
+                    workflow["50"].inputs.height = h;
+
+                } else {
+                    const resConfig = VIDEO_RESOLUTIONS.find(r => r.id === videoResolution);
+                    if (resConfig) {
+                        workflow["50"].inputs.width = resConfig.width;
+                        workflow["50"].inputs.height = resConfig.height;
+                    }
                 }
 
                 // Length
@@ -1024,11 +1085,8 @@ export default function App() {
 
                 const duration = Date.now() - startTimeRef.current;
                 setLastGenerationDuration(duration);
-                // Append to existing images or create new array
-                setLastGeneratedImage(prev => {
-                    const cleanPrev = Array.isArray(prev) ? prev : [];
-                    return [...cleanPrev, imageUrl];
-                });
+                // Replace existing images (to clear previous generation)
+                setLastGeneratedImage([imageUrl]);
                 setResultRevealed(false);
 
                 setStatus(GenerationStatus.FINISHED);

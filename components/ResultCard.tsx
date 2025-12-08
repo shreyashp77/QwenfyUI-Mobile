@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, X, PenTool, Monitor } from 'lucide-react';
+import { Check, Clock, X, PenTool, Monitor, ExternalLink } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ResultCardProps {
@@ -45,18 +45,23 @@ const ResultCard: React.FC<ResultCardProps> = ({
                             </button>
                         </>
                     )}
+                    {isFirstItemVideo && (
+                        <button onClick={() => window.open(images[0], '_blank')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Open in New Tab">
+                            <ExternalLink size={14} />
+                        </button>
+                    )}
                     <button onClick={onClear} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
                         <X size={14} />
                     </button>
                 </div>
             </div>
-            <div className={`relative ${images.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'h-64'}`}>
+            <div className={`relative ${images.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'min-h-[150px] bg-gray-100 dark:bg-black/50'}`}>
                 {images.map((imgUrl, idx) => (
-                    <div key={idx} className={`relative ${images.length > 1 ? 'aspect-square' : 'h-full'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={onImageClick}>
+                    <div key={idx} className={`relative ${images.length > 1 ? 'aspect-square h-full' : 'w-full flex justify-center'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={onImageClick}>
                         {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
                             <video
                                 src={imgUrl}
-                                className="w-full h-full object-cover"
+                                className={images.length > 1 ? "w-full h-full object-cover" : "w-full h-auto max-h-[70vh] object-contain"}
                                 autoPlay
                                 loop
                                 muted
@@ -64,7 +69,10 @@ const ResultCard: React.FC<ResultCardProps> = ({
                         ) : (
                             <img
                                 src={imgUrl}
-                                className={`w-full h-full object-cover ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
+                                className={images.length > 1
+                                    ? `w-full h-full object-cover ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
+                                    : `w-full h-auto max-h-[70vh] object-contain ${nsfwMode && !resultRevealed ? 'blur-md' : ''}`
+                                }
                                 alt={`Result ${idx + 1}`}
                             />
                         )}

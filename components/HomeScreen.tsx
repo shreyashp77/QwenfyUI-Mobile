@@ -69,7 +69,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onSelectView }) => {
                         <Monitor size={32} />
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Video</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan2.1 Video Generation.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan 2.2 Video Generation.</p>
                 </div>
             </button>
         </main>
