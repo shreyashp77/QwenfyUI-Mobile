@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { SavedPrompt, ThemeColor } from '../types';
-import { Save, FolderOpen, Trash2, X, Check, Loader2 } from 'lucide-react';
+import { Save, FolderOpen, Trash2, X, Check, Loader2, Pencil } from 'lucide-react';
 import { savePromptsToServer, loadPromptsFromServer } from '../services/comfyService';
 
 interface PromptManagerProps {
@@ -17,6 +17,8 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState<'list' | 'save'>('list');
   const [newPromptName, setNewPromptName] = useState('');
+  const [promptText, setPromptText] = useState(''); // Text for saving/editing
+  const [editingPrompt, setEditingPrompt] = useState<SavedPrompt | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +28,13 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
       loadPrompts();
     }
   }, [showModal, serverAddress]);
+
+  // Init text when entering save mode
+  useEffect(() => {
+    if (mode === 'save' && !editingPrompt) {
+      setPromptText(currentPrompt);
+    }
+  }, [mode, editingPrompt, currentPrompt]);
 
   const loadPrompts = async () => {
     setLoading(true);
@@ -41,23 +50,39 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
   };
 
   const handleSave = async () => {
-    if (!newPromptName.trim() || !currentPrompt.trim()) return;
+    if (!newPromptName.trim() || !promptText.trim()) return;
 
     setLoading(true);
-    const newPrompt: SavedPrompt = {
-      id: Date.now().toString(),
-      name: newPromptName.trim(),
-      text: currentPrompt,
-      timestamp: Date.now(),
-      workflow: workflow
-    };
 
-    const updated = [newPrompt, ...savedPrompts];
+    let updated: SavedPrompt[];
+
+    if (editingPrompt) {
+      // Update existing
+      const updatedPrompt: SavedPrompt = {
+        ...editingPrompt,
+        name: newPromptName.trim(),
+        text: promptText,
+        timestamp: Date.now()
+      };
+      updated = savedPrompts.map(p => p.id === editingPrompt.id ? updatedPrompt : p);
+    } else {
+      // Create new
+      const newPrompt: SavedPrompt = {
+        id: Date.now().toString(),
+        name: newPromptName.trim(),
+        text: promptText,
+        timestamp: Date.now(),
+        workflow: workflow
+      };
+      updated = [newPrompt, ...savedPrompts];
+    }
 
     try {
       await savePromptsToServer(updated, serverAddress);
       setSavedPrompts(updated);
       setNewPromptName('');
+      setPromptText('');
+      setEditingPrompt(null);
       setMode('list');
     } catch (err) {
       setError("Failed to save prompt to server.");
@@ -82,16 +107,30 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
     }
   };
 
+  const handleEdit = (prompt: SavedPrompt) => {
+    setEditingPrompt(prompt);
+    setNewPromptName(prompt.name);
+    setPromptText(prompt.text);
+    setMode('save');
+  };
+
   const handleLoad = (text: string) => {
     onLoadPrompt(text);
     setShowModal(false);
+  };
+
+  const openSaveMode = () => {
+    setEditingPrompt(null);
+    setNewPromptName('');
+    // promptText initialized by effect
+    setMode('save');
   };
 
   return (
     <>
       <div className="flex gap-2">
         <button
-          onClick={() => { setMode('save'); setShowModal(true); }}
+          onClick={() => { openSaveMode(); setShowModal(true); }}
           className={`p-2 text-gray-400 dark:text-gray-500 hover:text-${theme}-600 dark:hover:text-${theme}-400 transition-colors`}
           title="Save Prompt"
         >
@@ -112,7 +151,7 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
 
             <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                {mode === 'save' ? 'Save Prompt' : 'Saved Prompts'}
+                {mode === 'save' ? (editingPrompt ? 'Edit Prompt' : 'Save Prompt') : 'Saved Prompts'}
               </h3>
               <button onClick={() => setShowModal(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
                 <X size={20} />
@@ -147,15 +186,20 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
                           autoFocus
                         />
                       </div>
-                      <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-sm text-gray-600 dark:text-gray-400 italic border border-gray-200 dark:border-gray-700 line-clamp-4">
-                        {currentPrompt}
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Prompt Text</label>
+                        <textarea
+                          value={promptText}
+                          onChange={(e) => setPromptText(e.target.value)}
+                          className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded p-2 text-gray-900 dark:text-white min-h-[100px] text-sm focus:border-${theme}-500 outline-none resize-none`}
+                        />
                       </div>
                       <button
                         onClick={handleSave}
-                        disabled={!newPromptName.trim()}
+                        disabled={!newPromptName.trim() || !promptText.trim()}
                         className={`w-full bg-${theme}-600 hover:bg-${theme}-500 text-white py-2 rounded font-medium disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
-                        Save Prompt
+                        {editingPrompt ? 'Update Prompt' : 'Save Prompt'}
                       </button>
                     </div>
                   ) : (
@@ -167,14 +211,24 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
                           .filter(p => (p.workflow || 'edit') === workflow)
                           .map(prompt => (
                             <div key={prompt.id} className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500 group transition-all">
-                              <div className="flex justify-between items-start mb-2">
+                              <div className="flex justify-between items-center mb-2">
                                 <span className="font-semibold text-gray-800 dark:text-gray-200">{prompt.name}</span>
-                                <button
-                                  onClick={() => handleDelete(prompt.id)}
-                                  className="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
+                                <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => handleEdit(prompt)}
+                                    className={`p-1 text-gray-400 hover:text-${theme}-500 dark:text-gray-500 dark:hover:text-${theme}-400 transition-colors`}
+                                    title="Edit"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(prompt.id)}
+                                    className="p-1 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
                               </div>
                               <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-3">{prompt.text}</p>
                               <button
@@ -195,7 +249,7 @@ const PromptManager: React.FC<PromptManagerProps> = ({ currentPrompt, serverAddr
             {mode === 'list' && (
               <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 rounded-b-xl">
                 <button
-                  onClick={() => { setMode('save'); setError(null); }}
+                  onClick={() => openSaveMode()}
                   className={`text-xs text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 w-full text-center`}
                 >
                   Switch to Save Mode

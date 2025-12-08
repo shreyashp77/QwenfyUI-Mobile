@@ -105,6 +105,7 @@ export default function App() {
 
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
     const historySaveQueue = useRef<Promise<void>>(Promise.resolve()); // Sequential queue for history saves
+    const tempFilesToDelete = useRef<Set<string>>(new Set()); // Track temp files for deferred cleanup
 
 
     // Sync feedback services with settings
@@ -303,6 +304,7 @@ export default function App() {
                             setStatus(GenerationStatus.ERROR);
                             setStatusMessage("Error");
                             setErrorMsg(msg.data.exception_message || "Execution error on server");
+                            cleanupTempFiles();
                         }
                     }
                 } catch (e) {
@@ -549,7 +551,9 @@ export default function App() {
         setStatus(GenerationStatus.IDLE);
         setProgress(0);
         setStatusMessage("Stopped");
+        setStatusMessage("Stopped");
         setErrorMsg("Generation stopped by user.");
+        cleanupTempFiles();
     }
 
     const handleClearHistory = async () => {
@@ -625,6 +629,27 @@ export default function App() {
         }
     };
 
+    const handleDeleteInputImage = async (filename: string) => {
+        try {
+            const res = await fetch(`/api/delete-input-image`, {
+                method: 'POST',
+                body: JSON.stringify({ filename })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                setAvailableServerImages(prev => prev.filter(img => img !== filename));
+                setToastMessage("Image deleted 🗑️");
+                setTimeout(() => setToastMessage(null), 3000);
+            } else {
+                setErrorMsg(data.error || "Failed to delete input image.");
+            }
+        } catch (e) {
+            console.error(e);
+            setErrorMsg("Failed to delete input image.");
+        }
+    };
+
 
 
 
@@ -652,13 +677,52 @@ export default function App() {
         setLoras(prev => prev.filter(l => l.id !== id));
     }, []);
 
-    // Guard against outdated constants.ts file
     const validateWorkflow = (workflow: any, requiredNodes: string[]) => {
         for (const id of requiredNodes) {
             if (!workflow[id]) return id;
         }
         return null;
     };
+
+    const cleanupTempFiles = async () => {
+        if (tempFilesToDelete.current.size === 0) return;
+        const files = Array.from(tempFilesToDelete.current);
+        console.log("Cleaning up temporary input files:", files);
+
+        // Helper to wait
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+        for (const filename of files) {
+            let deleted = false;
+            const maxRetries = 3;
+
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const res = await fetch(`/api/delete-input-image`, {
+                        method: 'POST',
+                        body: JSON.stringify({ filename })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        console.log(`Deleted ${filename} successfully.`);
+                        deleted = true;
+                        tempFilesToDelete.current.delete(filename);
+                        break;
+                    } else {
+                        // warning
+                    }
+                } catch (e) {
+                    // error
+                }
+                if (i < maxRetries - 1) await delay(1000);
+            }
+            if (!deleted) {
+                console.warn(`Failed to delete ${filename} after retries.`);
+            }
+        }
+    };
+
     const handleGenerateClick = () => {
         executeGeneration();
     }
@@ -847,7 +911,7 @@ export default function App() {
                     filename = await uploadImage(images[0].file, settings.serverAddress, true);
                     console.log("Uploaded video input:", filename, "isTemporary:", images[0].isTemporary);
                     if (images[0].isTemporary) {
-                        tempInputFiles.push(filename);
+                        tempFilesToDelete.current.add(filename);
                     }
                 } else if (images[0].type === 'server' && images[0].filename) {
                     filename = images[0].filename;
@@ -909,50 +973,7 @@ export default function App() {
             setStatus(GenerationStatus.ERROR);
             setStatusMessage("Error");
             setErrorMsg(err.message || "Unknown error occurred");
-        } finally {
-            // Cleanup temporary input images
-            if (tempInputFiles.length > 0) {
-                console.log("Cleaning up temporary input images:", tempInputFiles);
-
-                // Helper to wait
-                const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-                for (const filename of tempInputFiles) {
-                    let deleted = false;
-                    const maxRetries = 5;
-
-                    for (let i = 0; i < maxRetries; i++) {
-                        try {
-                            const res = await fetch(`/api/delete-input-image`, {
-                                method: 'POST',
-                                body: JSON.stringify({ filename })
-                            });
-                            const data = await res.json();
-
-                            if (data.success) {
-                                console.log(`Deleted ${filename} successfully.`);
-                                deleted = true;
-                                break;
-                            } else {
-                                console.warn(`Attempt ${i + 1} failed to delete ${filename}:`, data.error);
-                            }
-                        } catch (e) {
-                            console.warn(`Attempt ${i + 1} error deleting ${filename}:`, e);
-                        }
-
-                        // Wait before retry, increasing delay slightly
-                        if (i < maxRetries - 1) {
-                            await delay(1000 * (i + 1));
-                        }
-                    }
-
-                    if (!deleted) {
-                        console.error(`Failed to delete ${filename} after ${maxRetries} attempts.`);
-                    }
-                }
-            } else {
-                console.log("No temporary input images to clean up.");
-            }
+            cleanupTempFiles(); // Clean up immediately on error
         }
     };
 
@@ -1050,6 +1071,8 @@ export default function App() {
         } catch (e: any) {
             console.error("Failed to fetch result image", e);
             setErrorMsg("Generated successfully, but failed to retrieve image: " + e.message);
+        } finally {
+            cleanupTempFiles();
         }
     };
 
@@ -1322,6 +1345,7 @@ export default function App() {
                         onSelect={handleServerImageSelect}
                         onClose={() => setShowServerSelector({ show: false, index: -1 })}
                         theme={settings.theme}
+                        onDelete={handleDeleteInputImage}
                     />
                 )
             }

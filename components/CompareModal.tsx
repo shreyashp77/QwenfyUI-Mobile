@@ -156,15 +156,17 @@ const CompareModal: React.FC<CompareModalProps> = ({ resultImage, inputImage, on
                     </div>
                 )}
 
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onUseResult();
-                    }}
-                    className={`absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-${theme}-600 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 z-20 w-max whitespace-nowrap`}
-                >
-                    Use as Input <ArrowUpRight size={18} />
-                </button>
+                {!isVideo && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onUseResult();
+                        }}
+                        className={`absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-${theme}-600 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 z-20 w-max whitespace-nowrap`}
+                    >
+                        Use as Input <ArrowUpRight size={18} />
+                    </button>
+                )}
             </div>
         </div>
     );

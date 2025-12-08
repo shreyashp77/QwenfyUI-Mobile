@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2 } from 'lucide-react';
+import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2, Trash2 } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ServerImageSelectorProps {
@@ -8,18 +8,20 @@ interface ServerImageSelectorProps {
   images: string[];
   onSelect: (filename: string) => void;
   onClose: () => void;
+  onDelete?: (filename: string) => void;
   theme: ThemeColor;
 }
 
 type SortOption = 'name' | 'date';
 type SortOrder = 'asc' | 'desc';
 
-const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress, images, onSelect, onClose, theme }) => {
+const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress, images, onSelect, onClose, theme, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sortBy, setSortBy] = useState<SortOption>('name');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [imageDates, setImageDates] = useState<Record<string, number>>({});
   const [loadingDates, setLoadingDates] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Fetch Last-Modified dates for images
   useEffect(() => {
@@ -119,9 +121,20 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
     }
   };
 
+  const handleDelete = (filename: string) => {
+    if (confirm("Are you sure you want to delete this input image? This cannot be undone.")) {
+      if (onDelete) {
+        onDelete(filename);
+        if (previewImage === filename) {
+          setPreviewImage(null);
+        }
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 dark:bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 transition-colors duration-300">
-      <div className="bg-white dark:bg-gray-900 w-full max-w-2xl h-[80vh] rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col">
+      <div className="bg-white dark:bg-gray-900 w-full max-w-2xl h-[80vh] rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col relative">
 
         {/* Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center gap-4">
@@ -183,7 +196,7 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
               {sortedImages.map((filename) => (
                 <button
                   key={filename}
-                  onClick={() => onSelect(filename)}
+                  onClick={() => setPreviewImage(filename)}
                   className={`group relative aspect-square rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-black hover:border-${theme}-500 dark:hover:border-${theme}-500 transition-all text-left`}
                 >
                   <img
@@ -205,6 +218,56 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
             </div>
           )}
         </div>
+
+        {/* Preview Modal Overlay */}
+        {previewImage && (
+          <div className="absolute inset-0 z-50 bg-white dark:bg-gray-900 flex flex-col animate-fade-in rounded-xl overflow-hidden">
+            <div className="flex-1 relative flex items-center justify-center bg-gray-50 dark:bg-black p-4 min-h-0">
+              <img
+                src={`${serverAddress}/view?filename=${encodeURIComponent(previewImage)}&type=input`}
+                alt={previewImage}
+                className="max-w-full max-h-full object-contain shadow-md"
+              />
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex justify-between items-center gap-4 flex-shrink-0">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{previewImage}</p>
+                {imageDates[previewImage] && (
+                  <p className="text-xs text-gray-500">{new Date(imageDates[previewImage]).toLocaleString()}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {onDelete && (
+                  <button
+                    onClick={() => handleDelete(previewImage)}
+                    className="p-3 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                    title="Delete Image"
+                  >
+                    <Trash2 size={20} />
+                    {/* Or TrashIcon if imported, but generic icon is imported. Let's stick to imports. */}
+                    {/* Actually Trash is not imported. I should verify imports or just use existing. */}
+                    {/* I'll use ImageIcon with strike or just text if icon unavailable. Wait, Lucide has Trash. I check imports. X is imported. */}
+                  </button>
+                )}
+                <button
+                  onClick={() => onSelect(previewImage)}
+                  className={`px-6 py-2.5 bg-${theme}-600 hover:bg-${theme}-500 text-white rounded-lg font-medium shadow-md transition-all active:scale-95`}
+                >
+                  Use Image
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
