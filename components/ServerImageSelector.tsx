@@ -25,27 +25,65 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
   useEffect(() => {
     const fetchDates = async () => {
       setLoadingDates(true);
-      const dates: Record<string, number> = {};
+
+      // Load cached dates
+      let cachedDates: Record<string, number> = {};
+      try {
+        const saved = localStorage.getItem('server_image_dates');
+        if (saved) {
+          cachedDates = JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error("Failed to parse cached dates", e);
+      }
+
+      // Identify which images need fetching
+      const missingImages = images.filter(img => !cachedDates[img]);
+
+      // If we have missing images, we copy the cache to start with, 
+      // but we will only update the state once everything is done (or incrementally if we wanted)
+      // For now, let's start with what we have
+      const finalDates = { ...cachedDates };
+
+      // If no missing images, we can just set state and be done
+      if (missingImages.length === 0) {
+        setImageDates(finalDates);
+        setLoadingDates(false);
+        return;
+      }
+
+      // Initial state set with what we have so far (optional, but good for perceived perf)
+      setImageDates(finalDates);
 
       // Limit concurrency to avoid browser stalling
       const batchSize = 10;
-      for (let i = 0; i < images.length; i += batchSize) {
-        const batch = images.slice(i, i + batchSize);
+      let newDatesFound = false;
+
+      for (let i = 0; i < missingImages.length; i += batchSize) {
+        const batch = missingImages.slice(i, i + batchSize);
         await Promise.all(batch.map(async (filename) => {
           try {
             const res = await fetch(`${serverAddress}/view?filename=${encodeURIComponent(filename)}&type=input`, { method: 'HEAD' });
             const lastModified = res.headers.get('Last-Modified');
             if (lastModified) {
-              dates[filename] = new Date(lastModified).getTime();
+              finalDates[filename] = new Date(lastModified).getTime();
+              newDatesFound = true;
             } else {
-              dates[filename] = 0;
+              finalDates[filename] = 0; // Mark as checked but no date
+              newDatesFound = true;
             }
           } catch (e) {
-            dates[filename] = 0;
+            finalDates[filename] = 0; // Error case
+            newDatesFound = true;
           }
         }));
       }
-      setImageDates(dates);
+
+      if (newDatesFound) {
+        setImageDates({ ...finalDates });
+        localStorage.setItem('server_image_dates', JSON.stringify(finalDates));
+      }
+
       setLoadingDates(false);
     };
 
