@@ -266,11 +266,38 @@ export default function App() {
                         }
                     } else if (msg.type === 'progress') {
                         if (msg.data.prompt_id === activePromptId) {
-                            const { value, max } = msg.data;
+                            const { value, max, node } = msg.data;
                             let percentage = Math.floor((value / max) * 100);
 
-                            // Special handling for Video generation (2-phase process)
-                            if (viewRef.current === 'video') {
+                            // Special handling for Video generation
+                            // We use specific Node IDs from VIDEO_WORKFLOW to map progress ranges
+                            const isVideoView = viewRef.current === 'video';
+                            if (isVideoView && node) {
+                                // Node 57: First KSampler (Steps 0-2) -> 0% - 30%
+                                if (node === "57") {
+                                    percentage = Math.floor((value / max) * 30);
+                                }
+                                // Node 58: Second KSampler (Steps 2-End) -> 30% - 70%
+                                else if (node === "58") {
+                                    percentage = 30 + Math.floor((value / max) * 40);
+                                }
+                                // Node 83: RIFE VFI -> 70% - 100%
+                                else if (node === "83") {
+                                    percentage = 70 + Math.floor((value / max) * 30);
+                                }
+                                // Node 63 or 82: Video Combine -> 95-100% (usually doesn't emit progress steps, but just in case)
+                                else if (node === "63" || node === "82") {
+                                    percentage = 95 + Math.floor((value / max) * 5);
+                                }
+                                // Fallback phase logic if node ID doesn't match known ones but we are in video
+                                else {
+                                    // Use the previous cumulative/phase logic as fallback? 
+                                    // Or just let it be global 0-100 for unknown nodes (like VAE Decode)
+                                    // VAE Decode (Node 8) takes time too.
+                                    // Let's rely on monotonic increases.
+                                }
+                            } else if (isVideoView) {
+                                // Fallback for video if no node ID
                                 // Detect phase reset (current value less than last value)
                                 if (value < lastProgressValueRef.current) {
                                     executionPhaseRef.current++;
