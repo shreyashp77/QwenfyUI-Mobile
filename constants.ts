@@ -37,6 +37,17 @@ export const STYLES: Style[] = [
   { id: 'vintage', name: 'Vintage', prompt: ', vintage style, retro, film grain, faded colors, 1980s', color: 'bg-gradient-to-br from-yellow-200 to-orange-300 text-gray-800' },
 ];
 
+export const VIDEO_MODELS = {
+  HIGH_NOISE: {
+    STANDARD: "wan2.2_i2v_high_noise_14B_Q5_K_M.gguf",
+    FAST: "wan2.2_i2v_high_noise_14B_Q4_K_M.gguf"
+  },
+  LOW_NOISE: {
+    STANDARD: "wan2.2_i2v_low_noise_14B_Q5_K_M.gguf",
+    FAST: "wan2.2_i2v_low_noise_14B_Q4_K_M.gguf"
+  }
+};
+
 export const BASE_WORKFLOW: ComfyWorkflow = {
   "3": {
     "inputs": {
@@ -583,7 +594,7 @@ export const VIDEO_WORKFLOW: ComfyWorkflow = {
   },
   "61": {
     "inputs": {
-      "unet_name": "wan2.2_i2v_high_noise_14B_Q5_K_M.gguf"
+      "unet_name": VIDEO_MODELS.HIGH_NOISE.STANDARD
     },
     "class_type": "UnetLoaderGGUF",
     "_meta": {
@@ -592,7 +603,7 @@ export const VIDEO_WORKFLOW: ComfyWorkflow = {
   },
   "62": {
     "inputs": {
-      "unet_name": "wan2.2_i2v_low_noise_14B_Q5_K_M.gguf"
+      "unet_name": VIDEO_MODELS.LOW_NOISE.STANDARD
     },
     "class_type": "UnetLoaderGGUF",
     "_meta": {

@@ -25,6 +25,8 @@ interface AdvancedOptionsProps {
     setVideoDuration: (duration: number) => void;
     extendVideo: boolean;
     setExtendVideo: (extend: boolean) => void;
+    fastVideoMode: boolean;
+    setFastVideoMode: (fast: boolean) => void;
 
     // Image State
     selectedResolution: string;
@@ -61,6 +63,8 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
     setVideoDuration,
     extendVideo,
     setExtendVideo,
+    fastVideoMode,
+    setFastVideoMode,
     selectedResolution,
     setSelectedResolution,
     customDimensions,
@@ -155,6 +159,20 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
                                     className={`w-12 h-6 rounded-full relative transition-colors ${extendVideo ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
                                 >
                                     <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${extendVideo ? 'translate-x-6' : ''}`} />
+                                </button>
+                            </div>
+
+                            {/* Fast Mode Toggle */}
+                            <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Fast Mode (Q4)</span>
+                                    <span className="text-[10px] text-gray-500">Reduced VRAM usage, faster</span>
+                                </div>
+                                <button
+                                    onClick={() => setFastVideoMode(!fastVideoMode)}
+                                    className={`w-12 h-6 rounded-full relative transition-colors ${fastVideoMode ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                >
+                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${fastVideoMode ? 'translate-x-6' : ''}`} />
                                 </button>
                             </div>
                         </>

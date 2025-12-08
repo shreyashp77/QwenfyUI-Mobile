@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS } from './constants';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
 import ImageInput from './components/ImageInput';
@@ -71,6 +71,7 @@ export default function App() {
 
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
+    const [fastVideoMode, setFastVideoMode] = useState(false);
     const [videoDuration, setVideoDuration] = useState(4);
     const [videoResolution, setVideoResolution] = useState('480x832');
 
@@ -979,6 +980,17 @@ export default function App() {
                 workflow["52"].inputs.image = filename;
                 workflow["6"].inputs.text = currentPrompt;
 
+                // Handle Fast Mode (Swap Models)
+                if (fastVideoMode) {
+                    console.log("Using Fast Mode (Q4 Models)");
+                    workflow["61"].inputs.unet_name = VIDEO_MODELS.HIGH_NOISE.FAST;
+                    workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.FAST;
+                } else {
+                    console.log("Using Standard Mode (Q5 Models)");
+                    workflow["61"].inputs.unet_name = VIDEO_MODELS.HIGH_NOISE.STANDARD;
+                    workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.STANDARD;
+                }
+
                 // Resolution
                 if (videoResolution === 'auto') {
                     // Calculate from input image
@@ -1367,6 +1379,8 @@ export default function App() {
                             setVideoDuration={setVideoDuration}
                             extendVideo={extendVideo}
                             setExtendVideo={setExtendVideo}
+                            fastVideoMode={fastVideoMode}
+                            setFastVideoMode={setFastVideoMode}
                             selectedResolution={selectedResolution}
                             setSelectedResolution={setSelectedResolution}
                             customDimensions={customDimensions}
