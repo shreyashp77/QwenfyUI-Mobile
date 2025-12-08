@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, History as HistoryIcon, Zap, Loader2, RefreshCw, AlertCircle, Cpu, Clock, X, ChevronDown, ChevronRight, SlidersHorizontal, Square, Trash2, Check, Plus, Moon, Sun, Monitor, Smartphone, Sparkles, Wand2, PenTool, ArrowLeft, Tablet, History } from 'lucide-react';
+import { Zap, Loader2, RefreshCw, AlertCircle, Cpu, ChevronDown, ChevronRight, SlidersHorizontal, Square, Plus, Monitor, Smartphone, Sparkles, Tablet, Trash2, History } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, STYLES, VIDEO_RESOLUTIONS } from './constants';
 import { HistoryItem, GenerationStatus, AppSettings, InputImage, ThemeColor, LoraSelection } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
@@ -10,6 +10,10 @@ import HistoryGallery from './components/HistoryGallery';
 import PromptManager from './components/PromptManager';
 import ServerImageSelector from './components/ServerImageSelector';
 import CompareModal from './components/CompareModal';
+import Header from './components/Header';
+import SettingsPanel from './components/SettingsPanel';
+import HomeScreen from './components/HomeScreen';
+import ResultCard from './components/ResultCard';
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -28,26 +32,7 @@ const THEME_OPTIONS: ThemeColor[] = [
     'teal', 'cyan', 'sky', 'blue', 'indigo'
 ];
 
-const COLOR_HEX: Record<string, string> = {
-    purple: '#a855f7',
-    violet: '#8b5cf6',
-    fuchsia: '#d946ef',
-    pink: '#ec4899',
-    rose: '#f43f5e',
-    red: '#ef4444',
-    orange: '#f97316',
-    amber: '#f59e0b',
-    yellow: '#eab308',
-    lime: '#84cc16',
-    green: '#22c55e',
-    emerald: '#10b981',
-    teal: '#14b8a6',
-    cyan: '#06b6d4',
-    sky: '#0ea5e9',
-    blue: '#3b82f6',
-    indigo: '#6366f1',
-    slate: '#64748b'
-};
+
 
 const ASPECT_RATIOS = [
     { id: '1:1', width: 1024, height: 1024, label: '1:1', icon: Square },
@@ -165,9 +150,7 @@ export default function App() {
     // Revised Images State (Only for Edit Mode)
     const [images, setImages] = useState<(InputImage | null)[]>([null, null, null]);
 
-    // Batch Generation State
-    const [batchCount, setBatchCount] = useState<number>(1);
-    const activeBatchIdsRef = useRef<Set<string>>(new Set());
+
 
     // Server Image Selection
     const [showServerSelector, setShowServerSelector] = useState<{ show: boolean, index: number }>({ show: false, index: -1 });
@@ -210,6 +193,7 @@ export default function App() {
     const wsRef = useRef<WebSocket | null>(null);
 
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
+    const historySaveQueue = useRef<Promise<void>>(Promise.resolve()); // Sequential queue for history saves
 
 
     // Sync feedback services with settings
@@ -1021,39 +1005,21 @@ export default function App() {
             }
 
             // 4. Queue Loop
-            activeBatchIdsRef.current.clear(); // Reset active batch
-            const newBatchIds = new Set<string>();
+            const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
+            currentPromptIdRef.current = promptId;
 
-            for (let i = 0; i < batchCount; i++) {
-                // For subsequent iterations, we might want to vary seed
-                if (i > 0 && settings.randomizeSeed) {
-                    currentSeed = Math.floor(Math.random() * 1000000000000);
-                    // Update workflow seed
-                    if (view === 'generate') workflow["3"].inputs.seed = currentSeed;
-                    // Video/Edit workflows might handle seeds differently or rely on initial set
-                }
-
-                const promptId = await queuePrompt(workflow, settings.serverAddress, clientId);
-                newBatchIds.add(promptId);
-                activeBatchIdsRef.current.add(promptId);
-                currentPromptIdRef.current = promptId; // Track latest for polling fallback (simplified)
-
-                // Save to Prompt History (only once)
-                if (i === 0 && view === 'generate' && currentPrompt.trim()) {
-                    setPromptHistory(prev => {
-                        const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
-                        return newHistory;
-                    });
-                }
+            // Save to Prompt History (only once)
+            if (view === 'generate' && currentPrompt.trim()) {
+                setPromptHistory(prev => {
+                    const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
+                    return newHistory;
+                });
             }
 
-            // Check if we ALREADY received success messages (race condition fix)
-            // Iterate over ALL active IDs
-            for (const pid of newBatchIds) {
-                if (pendingSuccessIds.current.has(pid)) {
-                    fetchGenerationResult(pid);
-                    pendingSuccessIds.current.delete(pid);
-                }
+            // Check if we already received success message (race condition)
+            if (pendingSuccessIds.current.has(promptId)) {
+                fetchGenerationResult(promptId);
+                pendingSuccessIds.current.delete(promptId);
             }
 
         } catch (err: any) {
@@ -1109,8 +1075,6 @@ export default function App() {
     };
 
     const fetchGenerationResult = async (promptId: string) => {
-        // Remove from active batch
-        activeBatchIdsRef.current.delete(promptId);
 
         try {
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -1164,14 +1128,9 @@ export default function App() {
                 });
                 setResultRevealed(false);
 
-                // If this was the LAST item in the batch, mark as finished
-                if (activeBatchIdsRef.current.size === 0) {
-                    setStatus(GenerationStatus.FINISHED);
-                    setStatusMessage("Finished");
-                    setProgress(100);
-                } else {
-                    setStatusMessage(`Generated ${batchCount - activeBatchIdsRef.current.size}/${batchCount}`);
-                }
+                setStatus(GenerationStatus.FINISHED);
+                setStatusMessage("Finished");
+                setProgress(100);
 
                 const newItem: HistoryItem = {
                     id: promptId,
@@ -1186,15 +1145,22 @@ export default function App() {
                     duration: duration
                 };
 
-                const currentServerHistory = await loadHistoryFromServer(settings.serverAddress);
-                const updatedHistory = [newItem, ...currentServerHistory];
-                await saveHistoryToServer(updatedHistory, settings.serverAddress);
 
-                const displayHistory = updatedHistory.map(item => ({
-                    ...item,
-                    imageUrl: `${settings.serverAddress}/view?filename=${encodeURIComponent(item.filename)}&type=${item.imageType}&subfolder=${encodeURIComponent(item.subfolder || '')}&t=${item.timestamp}`
-                }));
-                setHistory(displayHistory);
+                setHistory(prev => {
+                    const newHistory = [newItem, ...prev];
+
+                    // Queue the save operation to run sequentially
+                    // This prevents race conditions where parallel saves overwrite each other on the server
+                    historySaveQueue.current = historySaveQueue.current.then(async () => {
+                        try {
+                            await saveHistoryToServer(newHistory, settings.serverAddress);
+                        } catch (e) {
+                            console.error("Failed to save history to server", e);
+                        }
+                    });
+
+                    return newHistory;
+                });
 
             } else {
                 throw new Error("No output images found in history");
@@ -1227,242 +1193,39 @@ export default function App() {
             )}
 
             {/* Header */}
-            <header className={`p-4 bg-white dark:bg-gray-900 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300`}>
-                <div className="flex items-center gap-2">
-                    {view !== 'home' && (
-                        <button
-                            onClick={() => {
-                                setView('home');
-                                setLastGeneratedImage(null);
-                            }}
-                            className="mr-1 p-1 -ml-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-                        >
-                            <ArrowLeft size={20} />
-                        </button>
-                    )}
-                    <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-700 to-gray-900 dark:from-gray-100 dark:to-gray-400">
-                        QwenfyUI
-                    </h1>
-                    <div onClick={handleLightningClick} className="cursor-pointer">
-                        <Zap
-                            size={18}
-                            fill="currentColor"
-                            className={`transition-all duration-500 ${isConnected ? `text-${settings.theme}-500` : 'text-red-500'}`}
-                            style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
-                        />
-                    </div>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => {
-                            handleToggleThemeMode();
-                            haptic.trigger('medium');
-                            sound.play('click');
-                        }}
-                        className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-400`}
-                    >
-                        {settings.darkMode ? <Sun size={20} /> : <Moon size={20} />}
-                    </button>
-                    {view !== 'home' && (
-                        <button
-                            onClick={handleToggleHistory}
-                            className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showHistory ? `text-${settings.theme}-600 dark:text-${settings.theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
-                        >
-                            <HistoryIcon size={20} />
-                        </button>
-                    )}
-                    <button
-                        onClick={() => setShowSettings(!showSettings)}
-                        className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showSettings ? `text-${settings.theme}-600 dark:text-${settings.theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
-                    >
-                        <Settings size={20} />
-                    </button>
-                </div>
-            </header>
+            <Header
+                view={view}
+                isConnected={isConnected}
+                theme={settings.theme}
+                darkMode={settings.darkMode}
+                showSettings={showSettings}
+                showHistory={showHistory}
+                onBack={() => {
+                    setView('home');
+                    setLastGeneratedImage(null);
+                }}
+                onToggleThemeMode={() => {
+                    handleToggleThemeMode();
+                    haptic.trigger('medium');
+                    sound.play('click');
+                }}
+                onToggleHistory={handleToggleHistory}
+                onToggleSettings={() => setShowSettings(!showSettings)}
+                onLightningClick={handleLightningClick}
+            />
 
             {/* Settings Modal */}
-            {
-                showSettings && (
-                    <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-fade-in absolute w-full z-30 shadow-2xl transition-colors duration-300">
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">ComfyUI Server Address</label>
-                                <input
-                                    type="text"
-                                    value={settings.serverAddress}
-                                    onChange={(e) => setSettings({ ...settings, serverAddress: e.target.value })}
-                                    className={`w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded p-2 text-sm text-gray-800 dark:text-gray-200 focus:border-${settings.theme}-500 outline-none transition-colors`}
-                                />
-                            </div>
-
-                            {/* Theme Selector */}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-2">Interface Color</label>
-                                <div className="grid grid-cols-6 gap-2">
-                                    {THEME_OPTIONS.map(color => (
-                                        <button
-                                            key={color}
-                                            onClick={() => setSettings({ ...settings, theme: color })}
-                                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${settings.theme === color ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
-                                            style={{ backgroundColor: COLOR_HEX[color] }}
-                                            title={color.charAt(0).toUpperCase() + color.slice(1)}
-                                        >
-                                            {settings.theme === color && <Check size={14} className="text-white drop-shadow-sm" />}
-                                        </button>
-                                    ))}
-
-                                    {/* Custom Color Picker */}
-                                    <div className="relative w-8 h-8">
-                                        <div
-                                            className={`w-full h-full rounded-full flex items-center justify-center transition-all overflow-hidden bg-gradient-to-br from-red-500 via-green-500 to-blue-500 ${settings.theme === 'custom' ? 'ring-2 ring-gray-400 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
-                                            title="Custom Color"
-                                        >
-                                            {settings.theme === 'custom' && <Check size={14} className="text-white drop-shadow-md" />}
-                                        </div>
-                                        <input
-                                            type="color"
-                                            value={settings.customColor || '#ffffff'}
-                                            onChange={(e) => setSettings({ ...settings, theme: 'custom', customColor: e.target.value })}
-                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                            title="Choose custom color"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Blur</span>
-                                <button
-                                    onClick={() => setSettings({ ...settings, nsfwMode: !settings.nsfwMode })}
-                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.nsfwMode ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                                >
-                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.nsfwMode ? 'translate-x-6' : ''}`} />
-                                </button>
-                            </div>
-
-                            {/* Comparison Slider Toggle */}
-                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Comparison Slider</span>
-                                    <span className="text-[10px] text-gray-500">Show Before/After slider for edits</span>
-                                </div>
-                                <button
-                                    onClick={() => setSettings({ ...settings, enableComparison: !settings.enableComparison })}
-                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableComparison ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                                >
-                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableComparison ? 'translate-x-6' : ''}`} />
-                                </button>
-                            </div>
-
-                            {/* Feedback Toggle */}
-                            <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sounds/Haptics</span>
-                                    <span className="text-[10px] text-gray-500">Vibration (Android) or Sound (iOS)</span>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        setSettings({ ...settings, enableFeedback: !settings.enableFeedback });
-                                        if (!settings.enableFeedback) {
-                                            // Trigger feedback immediately to demonstrate
-                                            if (haptic.isSupported()) {
-                                                haptic.trigger('medium');
-                                            } else {
-                                                sound.play('click');
-                                            }
-                                        }
-                                    }}
-                                    className={`w-12 h-6 rounded-full relative transition-colors ${settings.enableFeedback ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
-                                >
-                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.enableFeedback ? 'translate-x-6' : ''}`} />
-                                </button>
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
-                                <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Server Data</h3>
-                                <div className="flex flex-col gap-2">
-                                    <button
-                                        onClick={handleClearHistory}
-                                        className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700 hover:border-red-300 dark:hover:border-red-800"
-                                    >
-                                        <Trash2 size={14} /> Clear History
-                                    </button>
-
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            {showSettings && (
+                <SettingsPanel
+                    settings={settings}
+                    onSettingsChange={setSettings}
+                    onClearHistory={handleClearHistory}
+                />
+            )}
 
             {
                 view === 'home' ? (
-                    <main className="p-6 flex flex-col items-center justify-center min-h-[80vh] gap-6">
-                        <div className="text-center mb-4">
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome</h2>
-                            <p className="text-gray-500 dark:text-gray-400">Choose a workflow to begin</p>
-                        </div>
-
-                        <button
-                            onClick={() => {
-                                setView('generate');
-                                haptic.trigger('medium');
-                                sound.play('click');
-                            }}
-                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                        >
-                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                                <Wand2 size={100} />
-                            </div>
-                            <div className="relative z-10 flex flex-col items-start">
-                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                    <Wand2 size={32} />
-                                </div>
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Image</h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Turbo Diffusion.</p>
-                            </div>
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setView('edit');
-                                haptic.trigger('medium');
-                                sound.play('click');
-                            }}
-                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                        >
-                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                                <PenTool size={100} />
-                            </div>
-                            <div className="relative z-10 flex flex-col items-start">
-                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                    <PenTool size={32} />
-                                </div>
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Edit Image</h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Modify existing images with Qwen Image Edit.</p>
-                            </div>
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                setView('video');
-                                haptic.trigger('medium');
-                                sound.play('click');
-                            }}
-                            className={`w-full max-w-sm group relative overflow-hidden rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl border-2 border-transparent hover:border-${settings.theme}-500 transition-all transform hover:scale-[1.02]`}
-                        >
-                            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity text-${settings.theme}-500`}>
-                                <Monitor size={100} />
-                            </div>
-                            <div className="relative z-10 flex flex-col items-start">
-                                <div className={`p-3 rounded-xl bg-${settings.theme}-100 dark:bg-${settings.theme}-900/50 text-${settings.theme}-600 dark:text-${settings.theme}-400 mb-4`}>
-                                    <Monitor size={32} />
-                                </div>
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Video</h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Animate images using Wan2.1 Video Generation.</p>
-                            </div>
-                        </button>
-                    </main>
+                    <HomeScreen theme={settings.theme} onSelectView={setView} />
                 ) : (
                     <main className="p-4 space-y-6 pb-24">
 
@@ -1525,27 +1288,7 @@ export default function App() {
                         )}
 
                         {/* GENERATE MODE: Batch Count Slider */}
-                        {view === 'generate' && showLoraConfig && (
-                            <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300 mb-2">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-medium text-gray-500">Batch Count</span>
-                                    <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{batchCount}</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="4"
-                                    step="1"
-                                    value={batchCount}
-                                    onChange={(e) => setBatchCount(parseInt(e.target.value))}
-                                    className={`w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-${settings.theme}-500`}
-                                />
-                                <div className="flex justify-between text-[10px] text-gray-400 mt-1">
-                                    <span>1</span>
-                                    <span>4</span>
-                                </div>
-                            </div>
-                        )}
+
 
                         {/* Prompt Input (Common) */}
                         <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-800 relative shadow-sm transition-colors duration-300">
@@ -1638,62 +1381,18 @@ export default function App() {
                             </div>
                         )}
 
-                        {/* Last Generated Result Card (Non-Sticky) */}
-                        {/* Last Generated Result Card (Non-Sticky) */}
+                        {/* Last Generated Result Card */}
                         {lastGeneratedImage && lastGeneratedImage.length > 0 && !showResultPreview && (
-                            <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">
-                                <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-                                    <span className={`text-xs font-medium text-${settings.theme}-600 dark:text-${settings.theme}-400 flex items-center gap-1`}>
-                                        <Check size={12} /> Generation Complete {Array.isArray(lastGeneratedImage) && lastGeneratedImage.length > 1 ? `(${lastGeneratedImage.length})` : ''}
-                                    </span>
-                                    <div className="flex gap-4">
-                                        {/* Only show "Use as Input" buttons if first image is an image */}
-                                        {Array.isArray(lastGeneratedImage) && !lastGeneratedImage[0].match(/\.(mp4|webm|mov)($|\?|&)/i) && (
-                                            <>
-                                                <button onClick={() => handleUseResult('edit')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Edit Input">
-                                                    <PenTool size={14} />
-                                                </button>
-                                                <button onClick={() => handleUseResult('video')} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Use as Video Input">
-                                                    <Monitor size={14} />
-                                                </button>
-                                            </>
-                                        )}
-                                        <button onClick={handleClearResult} className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1" title="Close Preview">
-                                            <X size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className={`relative ${Array.isArray(lastGeneratedImage) && lastGeneratedImage.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'h-64'}`}>
-                                    {Array.isArray(lastGeneratedImage) && lastGeneratedImage.map((imgUrl, idx) => (
-                                        <div key={idx} className={`relative ${lastGeneratedImage.length > 1 ? 'aspect-square' : 'h-full'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={() => {
-                                            window.open(imgUrl, '_blank');
-                                        }}>
-                                            {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
-                                                <video
-                                                    src={imgUrl}
-                                                    className="w-full h-full object-cover"
-                                                    autoPlay
-                                                    loop
-                                                    muted
-                                                />
-                                            ) : (
-                                                <img
-                                                    src={imgUrl}
-                                                    className={`w-full h-full object-cover ${settings.nsfwMode && !resultRevealed ? 'blur-md' : ''}`}
-                                                    alt={`Result ${idx + 1}`}
-                                                />
-                                            )}
-                                            {/* Duration Badge (Only on first item to avoid clutter) */}
-                                            {idx === 0 && lastGenerationDuration > 0 && (
-                                                <div className="absolute bottom-2 right-2 bg-white/80 dark:bg-black/60 backdrop-blur text-gray-900 dark:text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                                    <Clock size={10} />
-                                                    {(lastGenerationDuration / 1000).toFixed(1)}s
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                            <ResultCard
+                                images={lastGeneratedImage}
+                                duration={lastGenerationDuration}
+                                nsfwMode={settings.nsfwMode}
+                                resultRevealed={resultRevealed}
+                                theme={settings.theme}
+                                onUseResult={handleUseResult}
+                                onClear={handleClearResult}
+                                onImageClick={() => setShowResultPreview(true)}
+                            />
                         )}
 
                         {/* Config (Collapsible) */}
@@ -1834,6 +1533,7 @@ export default function App() {
                                         </div>
                                     )}
 
+
                                     {/* Seed Control */}
                                     <div className="p-4 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
                                         <div className="flex justify-between items-center mb-2">
@@ -1934,7 +1634,6 @@ export default function App() {
                                                     theme={settings.theme}
                                                 />
                                             ))}
-
                                             {settings.enableRemoteInput && (
                                                 <button
                                                     onClick={handleAddLora}

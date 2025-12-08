@@ -200,6 +200,8 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            if (interactionLocked) return;
+                            setInteractionLocked(true);
                             onClose();
                         }}
                         className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
