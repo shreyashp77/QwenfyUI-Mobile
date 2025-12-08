@@ -72,6 +72,7 @@ export interface SavedPrompt {
   name: string;
   text: string;
   timestamp: number;
+  workflow?: string;
 }
 
 export type ModelType = 'gguf' | 'diffusion';

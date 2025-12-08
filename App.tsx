@@ -265,6 +265,7 @@ export default function App() {
             if (connected) {
                 setupWebSocket();
                 fetchModels();
+                await clearServerHistory(settings.serverAddress); // Clear shared history on startup
                 loadHistory(); // Load history from server
             }
         };
@@ -1517,6 +1518,7 @@ export default function App() {
                                         serverAddress={settings.serverAddress}
                                         onLoadPrompt={setPrompt}
                                         theme={settings.theme}
+                                        workflow={view}
                                     />
                                 )}
                             </div>
