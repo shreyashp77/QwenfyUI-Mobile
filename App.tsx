@@ -25,6 +25,7 @@ import { haptic } from './services/hapticService';
 import { sound } from './services/soundService';
 
 const DEFAULT_MODEL = "svdq-fp4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors";
+const PENDING_GENERATION_KEY = 'pending_generation_state';
 
 export default function App() {
     // --- State ---
@@ -71,7 +72,7 @@ export default function App() {
 
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
-    const [fastVideoMode, setFastVideoMode] = useState(false);
+    const [fastVideoMode, setFastVideoMode] = useState(true);
     const [videoDuration, setVideoDuration] = useState(4);
     const [videoResolution, setVideoResolution] = useState('480x832');
 
@@ -138,6 +139,7 @@ export default function App() {
                 setupWebSocket();
                 fetchModels();
                 loadHistory(); // Load history from server
+                checkPendingGeneration(); // Check for pending generation
             }
         };
         check();
@@ -148,6 +150,41 @@ export default function App() {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [settings.serverAddress]);
+
+    const checkPendingGeneration = () => {
+        try {
+            const savedState = localStorage.getItem(PENDING_GENERATION_KEY);
+            if (savedState) {
+                const parsedState = JSON.parse(savedState);
+                console.log("Restoring pending generation state:", parsedState);
+
+                if (parsedState.promptId) {
+                    // Restore Refs
+                    currentPromptIdRef.current = parsedState.promptId;
+                    executingPromptRef.current = parsedState.prompt || "";
+                    executingSeedRef.current = parsedState.seed || 0;
+                    executingInputFilenameRef.current = parsedState.inputFilename;
+                    startTimeRef.current = parsedState.startTime || Date.now();
+
+                    // Recover View (if stored, otherwise guess or stay)
+                    // (Optional: could store view in pending state too)
+
+                    // Recover View
+                    if (parsedState.view) {
+                        setView(parsedState.view);
+                        // Update ref immediately just in case of race conditions
+                        viewRef.current = parsedState.view;
+                    }
+
+                    // Set Status to enable Polling/WS listeners
+                    setStatus(GenerationStatus.EXECUTING);
+                    setStatusMessage("Resuming...");
+                }
+            }
+        } catch (e) {
+            console.error("Failed to restore pending generation", e);
+        }
+    };
 
 
 
@@ -334,6 +371,7 @@ export default function App() {
                             setStatusMessage("Error");
                             setErrorMsg(msg.data.exception_message || "Execution error on server");
                             cleanupTempFiles();
+                            localStorage.removeItem(PENDING_GENERATION_KEY);
                         }
                     }
                 } catch (e) {
@@ -583,6 +621,7 @@ export default function App() {
         setStatusMessage("Stopped");
         setErrorMsg("Generation stopped by user.");
         cleanupTempFiles();
+        localStorage.removeItem(PENDING_GENERATION_KEY);
     }
 
     const handleClearHistory = async () => {
@@ -1107,6 +1146,17 @@ export default function App() {
                 });
             }
 
+            // Save Pending State
+            const pendingState = {
+                promptId,
+                prompt: currentPrompt,
+                seed: currentSeed,
+                inputFilename: executingInputFilenameRef.current,
+                startTime: startTimeRef.current,
+                view: view
+            };
+            localStorage.setItem(PENDING_GENERATION_KEY, JSON.stringify(pendingState));
+
             // Check if we already received success message (race condition)
             if (pendingSuccessIds.current.has(promptId)) {
                 fetchGenerationResult(promptId);
@@ -1118,7 +1168,9 @@ export default function App() {
             setStatus(GenerationStatus.ERROR);
             setStatusMessage("Error");
             setErrorMsg(err.message || "Unknown error occurred");
+            setErrorMsg(err.message || "Unknown error occurred");
             cleanupTempFiles(); // Clean up immediately on error
+            localStorage.removeItem(PENDING_GENERATION_KEY);
         }
     };
 
@@ -1215,6 +1267,7 @@ export default function App() {
             setErrorMsg("Generated successfully, but failed to retrieve image: " + e.message);
         } finally {
             cleanupTempFiles();
+            localStorage.removeItem(PENDING_GENERATION_KEY);
         }
     };
 
