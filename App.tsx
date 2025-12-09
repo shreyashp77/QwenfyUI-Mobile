@@ -813,7 +813,7 @@ export default function App() {
         setResultRevealed(false);
 
         // Track temporary files for cleanup
-        const tempInputFiles: string[] = [];
+
 
         try {
             let workflow: any;
@@ -886,7 +886,7 @@ export default function App() {
                             const filename = await uploadImage(img.file, settings.serverAddress, true);
                             finalFilenames[i] = filename;
                             if (img.isTemporary) {
-                                tempInputFiles.push(filename);
+                                tempFilesToDelete.current.add(filename);
                             }
                         } else if (img.type === 'server' && img.filename) {
                             finalFilenames[i] = img.filename;
