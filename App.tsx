@@ -137,7 +137,6 @@ export default function App() {
             if (connected) {
                 setupWebSocket();
                 fetchModels();
-                await clearServerHistory(settings.serverAddress); // Clear shared history on startup
                 loadHistory(); // Load history from server
             }
         };
