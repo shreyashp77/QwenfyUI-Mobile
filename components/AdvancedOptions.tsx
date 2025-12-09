@@ -1,16 +1,16 @@
 
 import React, { useState } from 'react';
-import { SlidersHorizontal, ChevronDown, ChevronRight, Monitor, Tablet, Square, Smartphone, Sparkles, RefreshCw, Plus } from 'lucide-react';
+import { SlidersHorizontal, ChevronDown, ChevronRight, Monitor, Square, Smartphone, Sparkles, RefreshCw, Plus } from 'lucide-react';
 import { AppSettings, LoraSelection } from '../types';
 import { VIDEO_RESOLUTIONS, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from '../constants';
 import LoraControl from './LoraControl';
 
 export const ASPECT_RATIOS = [
+    { id: 'auto', width: 0, height: 0, label: 'Auto', icon: Sparkles },
     { id: '1:1', width: 1024, height: 1024, label: '1:1', icon: Square },
-    { id: '9:16', width: 720, height: 1280, label: '9:16', icon: Smartphone },
+    { id: '9:16', width: 1080, height: 1920, label: '9:16', icon: Smartphone },
     { id: '16:9', width: 1280, height: 720, label: '16:9', icon: Monitor },
     { id: '4:3', width: 1152, height: 864, label: '4:3', icon: Monitor },
-    { id: '3:4', width: 864, height: 1152, label: '3:4', icon: Tablet },
 ];
 
 interface AdvancedOptionsProps {
@@ -183,7 +183,7 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
                         <div className="p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors">
                             <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Aspect Ratio</span>
                             <div className="flex gap-2 flex-wrap">
-                                {ASPECT_RATIOS.map(res => {
+                                {ASPECT_RATIOS.filter(res => view === 'edit' || res.id !== 'auto').map(res => {
                                     const Icon = res.icon;
                                     return (
                                         <button

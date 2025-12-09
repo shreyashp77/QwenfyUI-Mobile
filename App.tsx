@@ -829,6 +829,30 @@ export default function App() {
                 // Fallback if empty or invalid
                 if (!width || width <= 0) width = 720;
                 if (!height || height <= 0) height = 1280;
+            } else if (selectedResolution === 'auto' && view === 'edit') {
+                // Auto Mode Logic (Preserve Input Dimensions)
+                if (images[0]) {
+                    try {
+                        if (images[0].type === 'file' && images[0].file) {
+                            const dims = await getImageDimensions(images[0].file);
+                            width = dims.width;
+                            height = dims.height;
+                        } else if (images[0].previewUrl) {
+                            // Try to get dims from preview URL
+                            const img = new Image();
+                            await new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = reject;
+                                img.src = images[0]?.previewUrl || '';
+                            });
+                            width = img.width;
+                            height = img.height;
+                        }
+                    } catch (e) {
+                        console.error("Failed to determine auto dimensions", e);
+                        // Fallback already set to 720x1280
+                    }
+                }
             } else {
                 const resConfig = ASPECT_RATIOS.find(r => r.id === selectedResolution);
                 if (resConfig) {
