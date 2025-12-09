@@ -2,44 +2,44 @@
 import { ComfyWorkflow, SavedPrompt, HistoryItem } from "../types";
 
 export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true): Promise<string> => {
-  const formData = new FormData();
-  formData.append("image", file);
-  if (overwrite) {
-    formData.append("overwrite", "true");
-  }
+    const formData = new FormData();
+    formData.append("image", file);
+    if (overwrite) {
+        formData.append("overwrite", "true");
+    }
 
-  const response = await fetch(`${serverAddress}/upload/image`, {
-    method: "POST",
-    body: formData,
-  });
+    const response = await fetch(`${serverAddress}/upload/image`, {
+        method: "POST",
+        body: formData,
+    });
 
-  if (!response.ok) {
-    throw new Error("Failed to upload image");
-  }
+    if (!response.ok) {
+        throw new Error("Failed to upload image");
+    }
 
-  const data = await response.json();
-  // ComfyUI returns { name: "filename.png", subfolder: "", type: "input" }
-  return data.name;
+    const data = await response.json();
+    // ComfyUI returns { name: "filename.png", subfolder: "", type: "input" }
+    return data.name;
 };
 
 export const queuePrompt = async (workflow: ComfyWorkflow, serverAddress: string, clientId: string): Promise<string> => {
-  const response = await fetch(`${serverAddress}/prompt`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ 
-      prompt: workflow,
-      client_id: clientId 
-    }),
-  });
+    const response = await fetch(`${serverAddress}/prompt`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            prompt: workflow,
+            client_id: clientId
+        }),
+    });
 
-  if (!response.ok) {
-    throw new Error("Failed to queue prompt");
-  }
+    if (!response.ok) {
+        throw new Error("Failed to queue prompt");
+    }
 
-  const data = await response.json();
-  return data.prompt_id;
+    const data = await response.json();
+    return data.prompt_id;
 };
 
 export const interruptGeneration = async (serverAddress: string): Promise<void> => {
@@ -166,7 +166,7 @@ export const saveHistoryToServer = async (history: HistoryItem[], serverAddress:
     try {
         // We strip the transient imageUrl to save space and avoid stale dynamic URLs
         const persistableHistory = history.map(({ imageUrl, ...rest }) => rest);
-        
+
         await fetch(`${serverAddress}/userdata/${HISTORY_FILE}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -192,4 +192,31 @@ export const loadHistoryFromServer = async (serverAddress: string): Promise<Hist
 export const clearServerHistory = async (serverAddress: string): Promise<void> => {
     // Simply clear the JSON history file
     await saveHistoryToServer([], serverAddress);
+};
+
+// Favourites Persistence
+const FAVOURITES_FILE = "qwen_edit_favourites.json";
+
+export const saveFavouritesToServer = async (favourites: string[], serverAddress: string): Promise<void> => {
+    try {
+        await fetch(`${serverAddress}/userdata/${FAVOURITES_FILE}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(favourites)
+        });
+    } catch (e) {
+        console.error("Error saving favourites to server", e);
+    }
+};
+
+export const loadFavouritesFromServer = async (serverAddress: string): Promise<string[]> => {
+    try {
+        const response = await fetch(`${serverAddress}/userdata/${FAVOURITES_FILE}`);
+        if (response.status === 404) return [];
+        if (!response.ok) throw new Error(`Failed to load favourites: ${response.statusText}`);
+        return await response.json();
+    } catch (e) {
+        console.error("Error loading favourites from server", e);
+        return [];
+    }
 };

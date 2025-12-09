@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2, Trash2 } from 'lucide-react';
+import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2, Trash2, Heart } from 'lucide-react';
 import { ThemeColor } from '../types';
+import { loadFavouritesFromServer, saveFavouritesToServer } from '../services/comfyService';
 
 interface ServerImageSelectorProps {
   serverAddress: string;
@@ -23,6 +24,28 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
   const [loadingDates, setLoadingDates] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  // Favourites
+  const [favourites, setFavourites] = useState<string[]>([]);
+  const [view, setView] = useState<'all' | 'favourites'>('all');
+
+  // Load Favourites
+  useEffect(() => {
+    loadFavouritesFromServer(serverAddress).then(setFavourites);
+  }, [serverAddress]);
+
+  const toggleFavourite = (filename: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    setFavourites(prev => {
+      const newFavs = prev.includes(filename)
+        ? prev.filter(f => f !== filename)
+        : [...prev, filename];
+
+      saveFavouritesToServer(newFavs, serverAddress);
+      return newFavs;
+    });
+  };
+
   // Fetch Last-Modified dates for images
   useEffect(() => {
     const fetchDates = async () => {
@@ -42,9 +65,7 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
       // Identify which images need fetching
       const missingImages = images.filter(img => !cachedDates[img]);
 
-      // If we have missing images, we copy the cache to start with, 
-      // but we will only update the state once everything is done (or incrementally if we wanted)
-      // For now, let's start with what we have
+      // If we have missing images, we copy the cache to start with
       const finalDates = { ...cachedDates };
 
       // If no missing images, we can just set state and be done
@@ -54,7 +75,7 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
         return;
       }
 
-      // Initial state set with what we have so far (optional, but good for perceived perf)
+      // Initial state set with what we have so far
       setImageDates(finalDates);
 
       // Limit concurrency to avoid browser stalling
@@ -95,7 +116,13 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
   }, [images, serverAddress]);
 
   const sortedImages = useMemo(() => {
-    let result = images.filter(img =>
+    // 1. Filter by View (All vs Favourites)
+    let result = view === 'favourites'
+      ? images.filter(img => favourites.includes(img))
+      : images;
+
+    // 2. Filter by Search
+    result = result.filter(img =>
       img.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -110,7 +137,7 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [images, searchTerm, sortBy, sortOrder, imageDates]);
+  }, [images, searchTerm, sortBy, sortOrder, imageDates, view, favourites]);
 
   const toggleSort = (option: SortOption) => {
     if (sortBy === option) {
@@ -125,6 +152,10 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
     if (confirm("Are you sure you want to delete this input image? This cannot be undone.")) {
       if (onDelete) {
         onDelete(filename);
+        // Also remove from favourites if deleted
+        if (favourites.includes(filename)) {
+          toggleFavourite(filename);
+        }
         if (previewImage === filename) {
           setPreviewImage(null);
         }
@@ -149,6 +180,27 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
 
         {/* Controls */}
         <div className="p-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 space-y-3">
+
+          {/* View Tabs */}
+          <div className="flex p-1 bg-gray-200 dark:bg-gray-800 rounded-lg">
+            <button
+              onClick={() => setView('all')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${view === 'all'
+                ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+            >
+              All Images
+            </button>
+            <button
+              onClick={() => setView('favourites')}
+              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1 ${view === 'favourites'
+                ? 'bg-white dark:bg-gray-700 shadow-sm text-pink-500'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+            >
+              <Heart size={12} fill={view === 'favourites' ? "currentColor" : "none"} /> Favourites
+            </button>
+          </div>
+
           {/* Search */}
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
@@ -193,28 +245,40 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {sortedImages.map((filename) => (
-                <button
-                  key={filename}
-                  onClick={() => setPreviewImage(filename)}
-                  className={`group relative aspect-square rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-black hover:border-${theme}-500 dark:hover:border-${theme}-500 transition-all text-left`}
-                >
-                  <img
-                    loading="lazy"
-                    src={`${serverAddress}/view?filename=${encodeURIComponent(filename)}&type=input`}
-                    alt={filename}
-                    className="w-full h-full object-contain p-1"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 bg-white/90 dark:bg-black/70 p-1.5 backdrop-blur-sm">
-                    <p className="text-[10px] text-gray-800 dark:text-gray-200 truncate font-mono">{filename}</p>
-                    {imageDates[filename] ? (
-                      <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">
-                        {new Date(imageDates[filename]).toLocaleDateString()}
-                      </p>
-                    ) : null}
-                  </div>
-                </button>
-              ))}
+              {sortedImages.map((filename) => {
+                const isFav = favourites.includes(filename);
+                return (
+                  <button
+                    key={filename}
+                    onClick={() => setPreviewImage(filename)}
+                    className={`group relative aspect-square rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-black hover:border-${theme}-500 dark:hover:border-${theme}-500 transition-all text-left`}
+                  >
+                    <img
+                      loading="lazy"
+                      src={`${serverAddress}/view?filename=${encodeURIComponent(filename)}&type=input`}
+                      alt={filename}
+                      className="w-full h-full object-contain p-1"
+                    />
+                    {/* Favourite Button (Overlay) */}
+                    <div
+                      className="absolute top-1 right-1 p-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm text-white transition-opacity opacity-0 group-hover:opacity-100 data-[active=true]:opacity-100"
+                      data-active={isFav}
+                      onClick={(e) => toggleFavourite(filename, e)}
+                    >
+                      <Heart size={14} fill={isFav ? "#ec4899" : "none"} className={isFav ? "text-pink-500" : "text-white"} />
+                    </div>
+
+                    <div className="absolute inset-x-0 bottom-0 bg-white/90 dark:bg-black/70 p-1.5 backdrop-blur-sm">
+                      <p className="text-[10px] text-gray-800 dark:text-gray-200 truncate font-mono">{filename}</p>
+                      {imageDates[filename] ? (
+                        <p className="text-[9px] text-gray-500 dark:text-gray-400 truncate">
+                          {new Date(imageDates[filename]).toLocaleDateString()}
+                        </p>
+                      ) : null}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -245,6 +309,15 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Preview Modal Fav Toggle */}
+                <button
+                  onClick={() => toggleFavourite(previewImage)}
+                  className="p-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title={favourites.includes(previewImage) ? "Unfavourite" : "Favourite"}
+                >
+                  <Heart size={20} fill={favourites.includes(previewImage) ? "#ec4899" : "none"} className={favourites.includes(previewImage) ? "text-pink-500" : "text-gray-500"} />
+                </button>
+
                 {onDelete && (
                   <button
                     onClick={() => handleDelete(previewImage)}
