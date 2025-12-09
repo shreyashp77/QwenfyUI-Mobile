@@ -37,7 +37,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onSelectView }) => {
                         <Wand2 size={32} />
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Generate Image</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Turbo Diffusion.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-left">Create new images from text prompts using Z Image Turbo.</p>
                 </div>
             </button>
 

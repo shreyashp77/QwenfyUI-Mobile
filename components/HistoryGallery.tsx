@@ -235,6 +235,31 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                         </div>
                                     )}
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-black/20 transition-colors" />
+
+                                    {/* Open in New Tab Button - Overlay */}
+                                    <a
+                                        href={item.imageUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="absolute top-2 left-2 p-1.5 bg-white/90 dark:bg-black/60 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-full opacity-0 group-hover:opacity-100 transition-all z-10"
+                                        title="Open in new tab"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <ExternalLink size={14} />
+                                    </a>
+
+                                    {/* Delete Button - Overlay */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (interactionLocked) return;
+                                            onDelete(item.filename);
+                                        }}
+                                        className="absolute top-2 right-2 p-1.5 bg-white/90 dark:bg-black/60 hover:bg-red-100 dark:hover:bg-red-900/50 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-all z-10"
+                                        title="Delete Image"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
 
                                 <div className="p-4 flex-1 flex flex-col gap-2">
@@ -251,19 +276,6 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                             {copiedId === `prompt-${item.id}` ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                                         </button>
                                     </div>
-
-                                    {/* Delete Button */}
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (interactionLocked) return;
-                                            onDelete(item.filename);
-                                        }}
-                                        className="absolute top-2 right-2 p-1.5 bg-white/90 dark:bg-black/60 hover:bg-red-100 dark:hover:bg-red-900/50 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-full opacity-0 group-hover:opacity-100 transition-all z-10"
-                                        title="Delete Image"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
 
                                     {/* Seed Section */}
                                     <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-500 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -297,23 +309,26 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                     )}
 
                                     {/* Actions */}
-                                    <div className="flex justify-end items-center gap-3 pt-2 mt-auto">
-                                        <a
-                                            href={item.imageUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-gray-400 hover:text-gray-700 dark:hover:text-white"
-                                            title="Open in new tab"
-                                        >
-                                            <ExternalLink size={16} />
-                                        </a>
+                                    <div className="flex justify-between items-center gap-2 pt-2 mt-auto">
                                         {!item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
-                                            <button
-                                                onClick={() => onSelect(item)}
-                                                className={`flex items-center gap-1 text-${theme}-600 dark:text-${theme}-400 hover:text-${theme}-500 dark:hover:text-${theme}-300 font-medium text-xs`}
-                                            >
-                                                Use <ArrowUpRight size={16} />
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => onSelect(item)}
+                                                    className={`flex-1 flex items-center justify-center gap-1 bg-${theme}-50 dark:bg-${theme}-900/20 text-${theme}-600 dark:text-${theme}-400 hover:bg-${theme}-100 dark:hover:bg-${theme}-900/30 py-1.5 rounded text-[10px] font-medium transition-colors`}
+                                                    title="Use for Image Edit"
+                                                >
+                                                    Edit <ArrowUpRight size={14} />
+                                                </button>
+                                                {onSelectVideo && (
+                                                    <button
+                                                        onClick={() => onSelectVideo(item)}
+                                                        className={`flex-1 flex items-center justify-center gap-1 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 py-1.5 rounded text-[10px] font-medium transition-colors`}
+                                                        title="Use for Video Generation"
+                                                    >
+                                                        Video <Monitor size={14} />
+                                                    </button>
+                                                )}
+                                            </>
                                         )}
                                     </div>
                                 </div>
@@ -327,19 +342,29 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
 
             {/* Full Screen Preview Modal */}
             {previewIndex !== null && (
-                <div className="fixed inset-0 z-[60] bg-white dark:bg-black flex items-center justify-center" onClick={handleClosePreview}>
-                    <button
-                        onClick={handleClosePreview}
-                        className="absolute top-4 right-4 text-gray-800 dark:text-white p-2 hover:bg-gray-200 dark:hover:bg-white/20 rounded-full z-[70] transition-colors"
-                    >
-                        <X size={32} />
-                    </button>
+                <div className="fixed top-0 left-0 w-full h-[100dvh] z-[100] bg-white dark:bg-black flex flex-col overflow-hidden" onClick={handleClosePreview}>
+
+                    {/* Header Area for Close Button - Prevents Overlap */}
+                    <div className="h-16 flex justify-end items-center px-4 flex-shrink-0">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleClosePreview();
+                            }}
+                            className="text-gray-800 dark:text-white p-2 hover:bg-gray-200 dark:hover:bg-white/20 rounded-full transition-colors"
+                        >
+                            <X size={32} />
+                        </button>
+                    </div>
 
                     {/* Navigation Buttons */}
                     {previewIndex > 0 && (
                         <button
-                            onClick={handlePrev}
-                            className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-[70] transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handlePrev();
+                            }}
+                            className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-10 transition-colors"
                         >
                             <ChevronLeft size={48} />
                         </button>
@@ -347,15 +372,18 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
 
                     {previewIndex < history.length - 1 && (
                         <button
-                            onClick={handleNext}
-                            className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-[70] transition-colors"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleNext();
+                            }}
+                            className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 text-gray-500 dark:text-white/80 p-3 hover:bg-gray-200 dark:hover:bg-white/10 rounded-full z-10 transition-colors"
                         >
                             <ChevronRight size={48} />
                         </button>
                     )}
 
                     <div
-                        className="relative max-w-full max-h-full w-full h-full p-4 flex items-center justify-center"
+                        className="flex-1 relative flex items-center justify-center overflow-hidden w-full px-4 pb-24"
                         onClick={(e) => {
                             e.stopPropagation();
                             if (nsfwMode && !previewError) setPreviewRevealed(!previewRevealed);
@@ -378,7 +406,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                         controls
                                         autoPlay
                                         loop
-                                        className="max-w-full max-h-[90vh] object-contain"
+                                        className="max-w-[90%] max-h-[70vh] object-contain shadow-2xl"
                                         onError={() => setPreviewError(true)}
                                     />
                                 ) : (
@@ -386,7 +414,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                         src={history[previewIndex].imageUrl}
                                         alt="Preview"
                                         onError={() => setPreviewError(true)}
-                                        className={`max-w-full max-h-[90vh] object-contain transition-all duration-500 ${nsfwMode && !previewRevealed ? 'blur-2xl' : 'blur-0'}`}
+                                        className={`max-w-[90%] max-h-[70vh] object-contain shadow-2xl transition-all duration-500 ${nsfwMode && !previewRevealed ? 'blur-2xl' : 'blur-0'}`}
                                     />
                                 )}
 
