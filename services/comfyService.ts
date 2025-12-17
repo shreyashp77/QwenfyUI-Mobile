@@ -220,3 +220,46 @@ export const loadFavouritesFromServer = async (serverAddress: string): Promise<s
         return [];
     }
 };
+
+// PIN Security
+const PIN_FILE = "qwen_pin.json";
+
+export const savePinHash = async (hash: string | null, serverAddress: string): Promise<void> => {
+    try {
+        if (!hash) {
+            // If null, we want to delete key features, but since we can't easily DELETE,
+            // we'll save an empty object or a special marker, OR just save null/empty string.
+            // But wait, the API probably just writes what we give it.
+            // If we want to "remove" the PIN, let's write an empty file or specific "disabled" state.
+            // Actually, writing "null" string or valid JSON null is fine.
+            await fetch(`${serverAddress}/userdata/${PIN_FILE}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hash: null })
+            });
+        } else {
+            await fetch(`${serverAddress}/userdata/${PIN_FILE}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hash })
+            });
+        }
+    } catch (e) {
+        console.error("Error saving PIN to server", e);
+        throw e;
+    }
+};
+
+export const loadPinHash = async (serverAddress: string): Promise<string | null> => {
+    try {
+        // Add timestamp to prevent caching the lock state
+        const response = await fetch(`${serverAddress}/userdata/${PIN_FILE}?t=${Date.now()}`);
+        if (response.status === 404) return null;
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.hash || null;
+    } catch (e) {
+        // If file doesn't exist or error, assume no PIN
+        return null;
+    }
+};

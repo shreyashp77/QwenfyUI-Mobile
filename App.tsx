@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
-import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory } from './services/comfyService';
+import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
 import ServerImageSelector from './components/ServerImageSelector';
@@ -16,9 +16,11 @@ import ModelSelector from './components/ModelSelector';
 import PromptInput from './components/PromptInput';
 import AdvancedOptions, { ASPECT_RATIOS } from './components/AdvancedOptions';
 import GenerationBottomBar from './components/GenerationBottomBar';
+import PinOverlay from './components/PinOverlay'; // NEW
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
+import { hashPin } from './utils/cryptoUtils'; // NEW
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -39,6 +41,10 @@ export default function App() {
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+
+    // PIN State
+    const [isLocked, setIsLocked] = useState(false);
+    const [serverPinHash, setServerPinHash] = useState<string | null>(null);
 
     // Model
     const [availableModels, setAvailableModels] = useState<string[]>([DEFAULT_MODEL]);
@@ -136,6 +142,16 @@ export default function App() {
             const connected = await checkServerConnection(settings.serverAddress);
             setIsConnected(connected);
             if (connected) {
+                // PIN Check
+                const pinHash = await loadPinHash(settings.serverAddress);
+                if (pinHash) {
+                    setServerPinHash(pinHash);
+                    setIsLocked(true);
+                } else {
+                    setServerPinHash(null);
+                    setIsLocked(false);
+                }
+
                 setupWebSocket();
                 fetchModels();
                 loadHistory(); // Load history from server
@@ -1291,8 +1307,33 @@ export default function App() {
         return `${url}&t=${Date.now()}`;
     };
 
+    // PIN Handlers
+    const handleUnlock = async (pin: string): Promise<boolean> => {
+        if (!serverPinHash) return false;
+        const hashed = await hashPin(pin);
+        if (hashed === serverPinHash) {
+            setIsLocked(false);
+            return true;
+        }
+        return false;
+    };
+
+    // Callback for when PIN changes in Settings
+    const handleRefreshPin = async () => {
+        const pinHash = await loadPinHash(settings.serverAddress);
+        setServerPinHash(pinHash || null);
+    };
+
     return (
         <div className={`max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 relative shadow-2xl overflow-x-hidden ${lastGeneratedImage && !showResultPreview ? 'pb-96' : 'pb-24'} transition-colors duration-300`}>
+            {/* Security Overlay */}
+            {isLocked && (
+                <PinOverlay
+                    onUnlock={handleUnlock}
+                    title="Locked"
+                    subtitle="Enter PIN to access"
+                />
+            )}
 
             {/* Toast Notification */}
             {toastMessage && (
@@ -1330,6 +1371,8 @@ export default function App() {
                     onSettingsChange={setSettings}
                     onClearHistory={handleClearHistory}
                     onFreeMemory={handleFreeMemory}
+                    isPinSet={!!serverPinHash}
+                    onUpdatePin={handleRefreshPin}
                 />
             )}
 

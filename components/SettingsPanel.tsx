@@ -1,8 +1,11 @@
-import React from 'react';
-import { Check, Trash2, Eraser } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, Trash2, Eraser, Shield, ShieldAlert } from 'lucide-react';
 import { AppSettings, ThemeColor } from '../types';
 import { haptic } from '../services/hapticService';
 import { sound } from '../services/soundService';
+import PinOverlay from './PinOverlay';
+import { hashPin } from '../utils/cryptoUtils';
+import { savePinHash } from '../services/comfyService';
 
 const THEME_OPTIONS: ThemeColor[] = [
     'purple', 'violet', 'fuchsia', 'pink', 'rose', 'red',
@@ -36,17 +39,54 @@ interface SettingsPanelProps {
     onSettingsChange: (newSettings: AppSettings) => void;
     onClearHistory: () => void;
     onFreeMemory: () => void;
+    isPinSet: boolean;
+    onUpdatePin: () => void;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
     settings,
     onSettingsChange,
     onClearHistory,
-    onFreeMemory
+    onFreeMemory,
+    isPinSet,
+    onUpdatePin
 }) => {
+    const [showPinSetup, setShowPinSetup] = useState(false);
+
+    const handleSetPin = async (pin: string): Promise<boolean> => {
+        try {
+            const hash = await hashPin(pin);
+            await savePinHash(hash, settings.serverAddress);
+            haptic.trigger('success');
+            onUpdatePin();
+            setShowPinSetup(false);
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    };
+
+    const handleRemovePin = async () => {
+        if (confirm("Remove PIN protection?")) {
+            await savePinHash(null, settings.serverAddress);
+            haptic.trigger('medium');
+            onUpdatePin();
+        }
+    };
+
     return (
         <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 animate-fade-in absolute w-full z-30 shadow-2xl transition-colors duration-300">
+            {showPinSetup && (
+                <PinOverlay
+                    isSetupMode={true}
+                    onUnlock={handleSetPin}
+                    onCancel={() => setShowPinSetup(false)}
+                />
+            )}
+
             <div className="space-y-4">
+                {/* ... existing fields ... */}
                 <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">ComfyUI Server Address</label>
                     <input
@@ -92,6 +132,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </div>
                 </div>
 
+                {/* Security Section */}
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
+                    <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">Security</h3>
+                    {isPinSet ? (
+                        <button
+                            onClick={handleRemovePin}
+                            className={`w-full flex items-center justify-center gap-2 bg-${settings.theme}-100 dark:bg-${settings.theme}-900/30 hover:bg-red-100 dark:hover:bg-red-900/40 text-${settings.theme}-700 dark:text-${settings.theme}-300 hover:text-red-600 dark:hover:text-red-400 py-2 rounded text-sm transition-colors border border-${settings.theme}-200 dark:border-${settings.theme}-800`}
+                        >
+                            <ShieldAlert size={14} /> Remove PIN Protection
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setShowPinSetup(true)}
+                            className="w-full flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 py-2 rounded text-sm transition-colors border border-gray-200 dark:border-gray-700"
+                        >
+                            <Shield size={14} /> Set Access PIN
+                        </button>
+                    )}
+                </div>
+
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Blur</span>
                     <button
@@ -101,6 +161,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.nsfwMode ? 'translate-x-6' : ''}`} />
                     </button>
                 </div>
+
 
                 {/* Comparison Slider Toggle */}
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">
