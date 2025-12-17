@@ -44,6 +44,18 @@ A modern, feature-rich, mobile-first web frontend for ComfyUI. This application 
   - Persistent prompt storage.
 - **Resilience**: Auto-retry mechanisms for OOM (Out Of Memory) errors and connection drops. Includes CPU offloading for large models on first run.
 
+### 🛡️ Privacy & Security
+- **Incognito Mode**:
+  - Activated via Settings or Header badge.
+  - **Zero Trace**: Prompts are NOT saved; uploaded images are **automatically deleted** from the server immediately after generation.
+- **Metadata Stripping**:
+  - **Always On**: All uploaded images are automatically processed client-side (Canvas re-encoding) to strip hidden EXIF/GPS/Device metadata before they ever reach the server.
+- **PIN Protection**:
+  - Optional lock screen to prevent unauthorized access.
+  - Securely hashed PIN verification.
+- **HTTPS Proxy**:
+  - Built-in proxy to securely route API requests, enabling HTTPS support for mobile PWA usage.
+
 ## 🛠️ Prerequisites
 
 1.  **Node.js**: Required to run the frontend server. [Download Node.js](https://nodejs.org/).
