@@ -20,7 +20,8 @@ import PinOverlay from './components/PinOverlay'; // NEW
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
-import { hashPin } from './utils/cryptoUtils'; // NEW
+import { hashPin } from './utils/cryptoUtils';
+import { stripImageMetadata } from './utils/imageUtils'; // NEW
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -963,7 +964,17 @@ export default function App() {
                     const img = images[i];
                     if (img) {
                         if (img.type === 'file' && img.file) {
-                            const filename = await uploadImage(img.file, settings.serverAddress, true, 'input');
+                            // Metadata Stripping
+                            let fileToUpload = img.file;
+                            if (settings.stripMetadata) {
+                                try {
+                                    fileToUpload = await stripImageMetadata(fileToUpload);
+                                } catch (e) {
+                                    console.error("Failed to strip metadata", e);
+                                }
+                            }
+
+                            const filename = await uploadImage(fileToUpload, settings.serverAddress, true, 'input');
                             finalFilenames[i] = filename;
 
                             // If temporary (history item) OR Incognito, mark for deletion

@@ -151,6 +151,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </button>
                     )}
 
+
+
                     {/* Incognito Toggle */}
                     <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100 dark:border-gray-800">
                         <div className="flex flex-col">

@@ -60,6 +60,7 @@ export interface AppSettings {
   enableComparison: boolean;
   enableFeedback: boolean;
   incognito: boolean;
+  stripMetadata: boolean;
 }
 
 export enum GenerationStatus {
