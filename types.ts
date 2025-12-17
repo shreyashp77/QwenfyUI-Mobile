@@ -59,6 +59,7 @@ export interface AppSettings {
   randomizeSeed: boolean;
   enableComparison: boolean;
   enableFeedback: boolean;
+  incognito: boolean;
 }
 
 export enum GenerationStatus {

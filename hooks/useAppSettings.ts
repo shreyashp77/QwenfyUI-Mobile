@@ -43,6 +43,7 @@ export const useAppSettings = () => {
             randomizeSeed: true,
             enableComparison: false,
             enableFeedback: true,
+            incognito: false,
         };
     });
 

@@ -150,6 +150,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <Shield size={14} /> Set Access PIN
                         </button>
                     )}
+
+                    {/* Incognito Toggle */}
+                    <div className="flex items-center justify-between pt-2 mt-2 border-t border-gray-100 dark:border-gray-800">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Incognito Mode</span>
+                            <span className="text-[10px] text-gray-500">Don't save prompts/history/images</span>
+                        </div>
+                        <button
+                            onClick={() => onSettingsChange({ ...settings, incognito: !settings.incognito })}
+                            className={`w-12 h-6 rounded-full relative transition-colors ${settings.incognito ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                        >
+                            <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${settings.incognito ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-800">

@@ -11,6 +11,8 @@ interface HeaderProps {
     darkMode: boolean;
     showSettings: boolean;
     showHistory: boolean;
+
+    incognito?: boolean;
     onBack: () => void;
     onToggleThemeMode: () => void;
     onToggleHistory: () => void;
@@ -29,7 +31,8 @@ const Header: React.FC<HeaderProps> = ({
     onToggleThemeMode,
     onToggleHistory,
     onToggleSettings,
-    onLightningClick
+    onLightningClick,
+    incognito
 }) => {
     return (
         <header className={`p-4 bg-white dark:bg-gray-900 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300`}>
@@ -45,7 +48,7 @@ const Header: React.FC<HeaderProps> = ({
                 <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-700 to-gray-900 dark:from-gray-100 dark:to-gray-400">
                     QwenfyUI
                 </h1>
-                <div onClick={onLightningClick} className="cursor-pointer">
+                <div onClick={onLightningClick} className="cursor-pointer ml-2">
                     <Zap
                         size={18}
                         fill="currentColor"
@@ -53,6 +56,15 @@ const Header: React.FC<HeaderProps> = ({
                         style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
                     />
                 </div>
+                {incognito && (
+                    <div className="ml-2 flex items-center justify-center bg-purple-500/10 dark:bg-purple-400/10 border border-purple-500/20 rounded-full px-2 py-0.5 backdrop-blur-sm">
+                        <span className="relative flex h-2 w-2 mr-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                        </span>
+                        <span className="text-[10px] font-medium tracking-wide text-purple-600 dark:text-purple-300">PRIVATE</span>
+                    </div>
+                )}
             </div>
             <div className="flex gap-2">
                 <button

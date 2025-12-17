@@ -524,14 +524,20 @@ export default function App() {
         setStatus(GenerationStatus.UPLOADING);
         setStatusMessage("Uploading Image...");
         try {
-            const filename = await uploadImage(img.file, settings.serverAddress, false);
+            const filename = await uploadImage(img.file, settings.serverAddress, false, 'input');
+
+            // If Incognito, mark for deletion after generation
+            if (settings.incognito) {
+                tempFilesToDelete.current.add(filename);
+            }
 
             setImages(prev => {
                 const newImages = [...prev];
                 newImages[index] = {
                     type: 'server',
                     filename: filename,
-                    previewUrl: `${settings.serverAddress}/view?filename=${encodeURIComponent(filename)}&type=input`
+                    previewUrl: `${settings.serverAddress}/view?filename=${encodeURIComponent(filename)}&type=input`,
+                    isTemporary: settings.incognito // Mark visually or logically if needed
                 };
                 return newImages;
             });
@@ -791,6 +797,16 @@ export default function App() {
     };
 
     const cleanupTempFiles = async () => {
+        // Safety Check: If Incognito is OFF, we should not auto-delete anything, 
+        // even if it was marked previously. We prioritize persistence in Normal mode.
+        if (!settings.incognito) {
+            if (tempFilesToDelete.current.size > 0) {
+                console.log("Incognito OFF: Skipping auto-deletion of temporary files.");
+                tempFilesToDelete.current.clear();
+            }
+            return;
+        }
+
         if (tempFilesToDelete.current.size === 0) return;
         const files = Array.from(tempFilesToDelete.current);
         console.log("Cleaning up temporary input files:", files);
@@ -947,9 +963,11 @@ export default function App() {
                     const img = images[i];
                     if (img) {
                         if (img.type === 'file' && img.file) {
-                            const filename = await uploadImage(img.file, settings.serverAddress, true);
+                            const filename = await uploadImage(img.file, settings.serverAddress, true, 'input');
                             finalFilenames[i] = filename;
-                            if (img.isTemporary) {
+
+                            // If temporary (history item) OR Incognito, mark for deletion
+                            if (img.isTemporary || settings.incognito) {
                                 tempFilesToDelete.current.add(filename);
                             }
                         } else if (img.type === 'server' && img.filename) {
@@ -1164,7 +1182,7 @@ export default function App() {
             currentPromptIdRef.current = promptId;
 
             // Save to Prompt History (only once)
-            if (view === 'generate' && currentPrompt.trim()) {
+            if (view === 'generate' && currentPrompt.trim() && !settings.incognito) {
                 setPromptHistory(prev => {
                     const newHistory = [currentPrompt, ...prev.filter(p => p !== currentPrompt)].slice(0, 10);
                     return newHistory;
@@ -1350,6 +1368,7 @@ export default function App() {
                 darkMode={settings.darkMode}
                 showSettings={showSettings}
                 showHistory={showHistory}
+                incognito={settings.incognito}
                 onBack={() => {
                     setView('home');
                     setLastGeneratedImage(null);

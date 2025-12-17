@@ -1,12 +1,13 @@
 
 import { ComfyWorkflow, SavedPrompt, HistoryItem } from "../types";
 
-export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true): Promise<string> => {
+export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true, imageType: 'input' | 'temp' = 'input'): Promise<string> => {
     const formData = new FormData();
     formData.append("image", file);
     if (overwrite) {
         formData.append("overwrite", "true");
     }
+    formData.append("type", imageType);
 
     const response = await fetch(`${serverAddress}/upload/image`, {
         method: "POST",
@@ -18,7 +19,6 @@ export const uploadImage = async (file: File, serverAddress: string, overwrite: 
     }
 
     const data = await response.json();
-    // ComfyUI returns { name: "filename.png", subfolder: "", type: "input" }
     return data.name;
 };
 
