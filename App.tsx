@@ -257,9 +257,18 @@ export default function App() {
         if (wsRef.current) wsRef.current.close();
 
         // Convert http/https to ws/wss and append clientId
-        const wsProtocol = settings.serverAddress.startsWith('https') ? 'wss' : 'ws';
-        const wsHost = settings.serverAddress.replace(/^https?:\/\//, '');
-        const wsUrl = `${wsProtocol}://${wsHost}/ws?clientId=${clientId}`;
+        // Determine WebSocket URL
+        let wsUrl = '';
+        if (settings.serverAddress.startsWith('/')) {
+            // Relative path (Proxy mode)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsUrl = `${protocol}//${window.location.host}/ws?clientId=${clientId}`;
+        } else {
+            // Absolute path (Direct mode)
+            const wsProtocol = settings.serverAddress.startsWith('https') ? 'wss' : 'ws';
+            const wsHost = settings.serverAddress.replace(/^https?:\/\//, '');
+            wsUrl = `${wsProtocol}://${wsHost}/ws?clientId=${clientId}`;
+        }
 
         try {
             const ws = new WebSocket(wsUrl);

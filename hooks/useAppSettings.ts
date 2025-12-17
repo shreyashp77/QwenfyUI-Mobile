@@ -4,8 +4,7 @@ import { AppSettings, ThemeColor } from '../types';
 import { THEME_OPTIONS } from '../constants';
 import { adjustBrightness } from '../utils/colorUtils';
 
-const getHostname = () => window.location.hostname || 'localhost';
-const DEFAULT_SERVER = `http://${getHostname()}:8188`;
+const DEFAULT_SERVER = '/api/comfy';
 
 export const useAppSettings = () => {
     const [settings, setSettings] = useState<AppSettings>(() => {

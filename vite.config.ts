@@ -2,6 +2,7 @@
 /// <reference types="node" />
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -9,6 +10,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      basicSsl(),
       {
         name: 'clear-output-plugin',
         configureServer(server) {
@@ -157,7 +159,23 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true, // Exposes the server to the LAN
       port: parseInt(env.VITE_PORT) || 7777,
-      allowedHosts: env.VITE_ALLOWED_HOSTS ? [env.VITE_ALLOWED_HOSTS] : []
+      allowedHosts: env.VITE_ALLOWED_HOSTS ? [env.VITE_ALLOWED_HOSTS] : [],
+      proxy: {
+        '/api/comfy': {
+          target: 'http://127.0.0.1:8188',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/comfy/, ''),
+          secure: false,
+          ws: true
+        },
+        '/ws': {
+          target: 'ws://127.0.0.1:8188',
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+          rewrite: (path) => path.replace(/^\/ws/, '')
+        }
+      }
     }
   }
 })
