@@ -58,15 +58,13 @@ const ResultCard: React.FC<ResultCardProps> = ({
                             </button>
                         </>
                     )}
-                    {isFirstItemVideo && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); window.open(images[0], '_blank'); }}
-                            className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
-                            title="Open in New Tab"
-                        >
-                            <ExternalLink size={14} />
-                        </button>
-                    )}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); window.open(images[0], '_blank'); }}
+                        className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
+                        title="Open in New Tab"
+                    >
+                        <ExternalLink size={14} />
+                    </button>
                     <button
                         className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
                         title={isMinimized ? "Maximize Result" : "Minimize Result"}
