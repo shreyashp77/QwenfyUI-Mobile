@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2, Trash2, Heart } from 'lucide-react';
+import { X, Image as ImageIcon, Search, ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Loader2, Trash2, Heart, Shuffle } from 'lucide-react';
 import { ThemeColor } from '../types';
 import { loadFavouritesFromServer, saveFavouritesToServer } from '../services/comfyService';
 
@@ -148,6 +148,13 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
     }
   };
 
+  const handleRandomSelect = () => {
+    if (sortedImages.length > 0) {
+      const randomIndex = Math.floor(Math.random() * sortedImages.length);
+      onSelect(sortedImages[randomIndex]);
+    }
+  };
+
   const handleDelete = (filename: string) => {
     if (confirm("Are you sure you want to delete this input image? This cannot be undone.")) {
       if (onDelete) {
@@ -232,6 +239,13 @@ const ServerImageSelector: React.FC<ServerImageSelectorProps> = ({ serverAddress
             >
               {loadingDates ? <Loader2 size={14} className="animate-spin" /> : (sortOrder === 'desc' ? <Calendar size={14} /> : <Clock size={14} />)}
               Date
+            </button>
+            <button
+              onClick={handleRandomSelect}
+              className={`flex items-center justify-center px-3 py-2 rounded-lg text-xs font-medium transition-colors border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 active:scale-95`}
+              title="Select Random"
+            >
+              <Shuffle size={14} />
             </button>
           </div>
         </div>
