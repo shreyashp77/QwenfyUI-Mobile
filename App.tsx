@@ -807,15 +807,8 @@ export default function App() {
     };
 
     const cleanupTempFiles = async () => {
-        // Safety Check: If Incognito is OFF, we should not auto-delete anything, 
-        // even if it was marked previously. We prioritize persistence in Normal mode.
-        if (!settings.incognito) {
-            if (tempFilesToDelete.current.size > 0) {
-                console.log("Incognito OFF: Skipping auto-deletion of temporary files.");
-                tempFilesToDelete.current.clear();
-            }
-            return;
-        }
+        // Delete all files that were marked for cleanup
+        // Files are added to this set when: isTemporary (AI-generated input) OR incognito mode was on at upload time
 
         if (tempFilesToDelete.current.size === 0) return;
         const files = Array.from(tempFilesToDelete.current);
