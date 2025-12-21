@@ -1055,6 +1055,9 @@ export default function App() {
                 workflow["3"].inputs.scheduler = selectedScheduler;
                 workflow["3"].inputs.steps = steps;
 
+                workflow["13"].inputs.width = width;
+                workflow["13"].inputs.height = height;
+
                 // Apply Style
                 const style = STYLES.find(s => s.id === selectedStyle);
                 const stylePrompt = style ? style.prompt : "";
@@ -1062,8 +1065,26 @@ export default function App() {
 
                 workflow["7"].inputs.text = negativePrompt;
 
-                workflow["13"].inputs.width = width;
-                workflow["13"].inputs.height = height;
+                // Dynamic LoRA Loading (Chaining)
+                const activeLoras = loras.filter(l => l.enabled);
+                let currentModelNode = "16"; // Start with the UNETLoader
+
+                activeLoras.forEach((lora, index) => {
+                    const loraNodeId = `lora_${index}`;
+                    workflow[loraNodeId] = {
+                        inputs: {
+                            lora_name: lora.name,
+                            strength_model: lora.strength,
+                            model: [currentModelNode, 0]
+                        },
+                        class_type: "LoraLoaderModelOnly",
+                        _meta: { title: `Lora: ${lora.name}` }
+                    };
+                    currentModelNode = loraNodeId;
+                });
+
+                // Connect the final model node to the KSampler
+                workflow["3"].inputs.model = [currentModelNode, 0];
 
             } else if (view === 'video') {
                 // --- VIDEO MODE LOGIC ---

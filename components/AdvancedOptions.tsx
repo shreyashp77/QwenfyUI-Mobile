@@ -322,32 +322,34 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
                         </div>
                     )}
 
-                    {/* LoRAs (Only in Edit Mode) */}
-                    {view === 'edit' && (
+                    {/* LoRAs (Edit/Generate Mode) */}
+                    {(view === 'edit' || view === 'generate') && (
                         <div className="space-y-3">
-                            {loras.map((lora, index) => (
-                                <LoraControl
-                                    key={lora.id}
-                                    id={lora.id}
-                                    label={`LoRA ${index + 1}`}
-                                    enabled={lora.enabled}
-                                    strength={lora.strength}
-                                    availableLoras={availableLoras}
-                                    selectedLoraName={lora.name}
-                                    onUpdate={handleUpdateLora}
-                                    onDelete={handleDeleteLora}
-                                    theme={settings.theme}
-                                />
-                            ))}
-                            {settings.enableRemoteInput && (
-                                <button
-                                    onClick={handleAddLora}
-                                    disabled={loras.length >= 10}
-                                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-                                >
-                                    <Plus size={18} /> Add LoRA
-                                </button>
+                            {loras.length > 0 && (
+                                <div className="space-y-3">
+                                    {loras.map((lora, index) => (
+                                        <LoraControl
+                                            key={lora.id}
+                                            id={lora.id}
+                                            label={`LoRA ${index + 1}`}
+                                            enabled={lora.enabled}
+                                            strength={lora.strength}
+                                            availableLoras={availableLoras}
+                                            selectedLoraName={lora.name}
+                                            onUpdate={handleUpdateLora}
+                                            onDelete={handleDeleteLora}
+                                            theme={settings.theme}
+                                        />
+                                    ))}
+                                </div>
                             )}
+                            <button
+                                onClick={handleAddLora}
+                                disabled={loras.length >= 10}
+                                className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-${settings.theme}-600 dark:hover:text-${settings.theme}-400 hover:border-${settings.theme}-500/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                                <Plus size={18} /> Add LoRA
+                            </button>
                         </div>
                     )}
                 </div>
