@@ -172,8 +172,8 @@ export default defineConfig(({ mode }) => {
           target: 'ws://127.0.0.1:8188',
           changeOrigin: true,
           secure: false,
-          ws: true,
-          rewrite: (path) => path.replace(/^\/ws/, '')
+          ws: true
+          // Note: Do NOT rewrite path - ComfyUI expects /ws
         }
       }
     }

@@ -282,7 +282,9 @@ export default function App() {
             wsUrl = `${protocol}//${window.location.host}/ws?clientId=${clientId}`;
         } else {
             // Absolute path (Direct mode)
-            const wsProtocol = settings.serverAddress.startsWith('https') ? 'wss' : 'ws';
+            // Check for explicit http:// or https:// prefix
+            const isHttps = settings.serverAddress.startsWith('https://');
+            const wsProtocol = isHttps ? 'wss' : 'ws';
             const wsHost = settings.serverAddress.replace(/^https?:\/\//, '');
             wsUrl = `${wsProtocol}://${wsHost}/ws?clientId=${clientId}`;
         }
@@ -328,7 +330,14 @@ export default function App() {
                             }
                         }
                     } else if (msg.type === 'progress') {
-                        if (msg.data.prompt_id === activePromptId) {
+                        // Accept progress messages if:
+                        // 1. prompt_id matches activePromptId, OR
+                        // 2. No activePromptId set yet (message arrived before queuePrompt returned)
+                        const messagePromptId = msg.data?.prompt_id;
+                        const shouldProcessProgress = (messagePromptId === activePromptId) ||
+                            (!activePromptId && messagePromptId);
+
+                        if (shouldProcessProgress) {
                             const { value, max, node } = msg.data;
                             let percentage = Math.floor((value / max) * 100);
 
