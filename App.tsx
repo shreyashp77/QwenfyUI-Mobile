@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
+import { BASE_WORKFLOW, BASE_WORKFLOW_2511, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
-import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
+import { uploadImage, queuePrompt, checkServerConnection, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
 import ServerImageSelector from './components/ServerImageSelector';
@@ -12,7 +12,7 @@ import Header from './components/Header';
 import SettingsPanel from './components/SettingsPanel';
 import HomeScreen from './components/HomeScreen';
 import ResultCard from './components/ResultCard';
-import ModelSelector from './components/ModelSelector';
+import VersionSelector from './components/VersionSelector';
 import PromptInput from './components/PromptInput';
 import AdvancedOptions, { ASPECT_RATIOS } from './components/AdvancedOptions';
 import GenerationBottomBar from './components/GenerationBottomBar';
@@ -48,8 +48,21 @@ export default function App() {
     const [serverPinHash, setServerPinHash] = useState<string | null>(null);
 
     // Model
-    const [availableModels, setAvailableModels] = useState<string[]>([DEFAULT_MODEL]);
-    const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+    const [selectedModel] = useState<string>(DEFAULT_MODEL); // Fixed r128 model for 2509
+    const [editModelVersion, setEditModelVersion] = useState<'2509' | '2511'>('2509');
+
+    // Handler for version switching with auto VRAM clear
+    const handleVersionChange = async (newVersion: '2509' | '2511') => {
+        if (newVersion !== editModelVersion) {
+            console.log(`Switching from ${editModelVersion} to ${newVersion}, clearing VRAM...`);
+            try {
+                await freeMemory(settings.serverAddress);
+            } catch (e) {
+                console.warn('Failed to clear VRAM on version switch:', e);
+            }
+            setEditModelVersion(newVersion);
+        }
+    };
 
     // Inputs
     const [prompt, setPrompt] = useState<string>("");
@@ -232,16 +245,7 @@ export default function App() {
     }, [status, settings.serverAddress]);
 
     const fetchModels = async () => {
-        // Fetch Models
-        const models = await getAvailableNunchakuModels(settings.serverAddress);
-        if (models && models.length > 0) {
-            setAvailableModels(models);
-            setSelectedModel(prev => {
-                if (models.includes(prev)) return prev;
-                if (models.includes(DEFAULT_MODEL)) return DEFAULT_MODEL;
-                return models[0];
-            });
-        }
+        // Model selection removed - using fixed r128 model for 2509
 
         // Fetch LoRAs
         const loras = await getAvailableLoras(settings.serverAddress);
@@ -953,7 +957,7 @@ export default function App() {
                 }
 
                 // Safety check for Edit workflow
-                if (!BASE_WORKFLOW["129"]) {
+                if (editModelVersion === '2509' && !BASE_WORKFLOW["129"]) {
                     setErrorMsg("Configuration Error: constants.ts file is outdated (Missing Node 129).");
                     setStatus(GenerationStatus.IDLE);
                     setStatusMessage("");
@@ -995,51 +999,101 @@ export default function App() {
 
                 setStatus(GenerationStatus.QUEUED);
                 setStatusMessage("Queued...");
-                workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW));
-                const missingNode = validateWorkflow(workflow, ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"]);
-                if (missingNode) throw new Error(`Invalid Edit Workflow: Missing node ${missingNode}.`);
 
-                workflow["3"].inputs.seed = currentSeed;
-                workflow["3"].inputs.sampler_name = selectedSampler;
-                workflow["3"].inputs.scheduler = selectedScheduler;
-                workflow["113"].inputs.prompt = currentPrompt;
-                workflow["110"].inputs.model_name = selectedModel;
+                if (editModelVersion === '2509') {
+                    // --- 2509 (Nunchaku) Workflow ---
+                    workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW));
+                    const missingNode = validateWorkflow(workflow, ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"]);
+                    if (missingNode) throw new Error(`Invalid Edit Workflow (2509): Missing node ${missingNode}.`);
 
-                workflow["118"].inputs.width = width;
-                workflow["118"].inputs.height = height;
-                const mpx = Math.round((width * height) / 100000) / 10;
-                workflow["100"].inputs.megapixels = Math.max(1, mpx);
+                    workflow["3"].inputs.seed = currentSeed;
+                    workflow["3"].inputs.sampler_name = selectedSampler;
+                    workflow["3"].inputs.scheduler = selectedScheduler;
+                    workflow["113"].inputs.prompt = currentPrompt;
+                    workflow["110"].inputs.model_name = selectedModel;
 
-                if (finalFilenames[0]) workflow["109"].inputs.image = finalFilenames[0];
+                    workflow["118"].inputs.width = width;
+                    workflow["118"].inputs.height = height;
+                    const mpx = Math.round((width * height) / 100000) / 10;
+                    workflow["100"].inputs.megapixels = Math.max(1, mpx);
 
-                const addImageChain = (imgIndex: number, filename: string) => {
-                    const loadId = (1000 + imgIndex).toString();
-                    workflow[loadId] = JSON.parse(JSON.stringify(workflow["109"]));
-                    workflow[loadId].inputs.image = filename;
-                    workflow["113"].inputs[`image${imgIndex}`] = [loadId, 0];
-                    workflow["114"].inputs[`image${imgIndex}`] = [loadId, 0];
-                };
+                    if (finalFilenames[0]) workflow["109"].inputs.image = finalFilenames[0];
 
-                workflow["113"].inputs.image1 = ["109", 0];
-                workflow["114"].inputs.image1 = ["109", 0];
+                    // Connect text encoders directly to LoadImage
+                    workflow["113"].inputs.image1 = ["109", 0];
+                    workflow["114"].inputs.image1 = ["109", 0];
 
-                if (finalFilenames[1]) addImageChain(2, finalFilenames[1]!);
-                if (finalFilenames[2]) addImageChain(3, finalFilenames[2]!);
+                    const addImageChain = (imgIndex: number, filename: string) => {
+                        const loadId = (1000 + imgIndex).toString();
+                        workflow[loadId] = JSON.parse(JSON.stringify(workflow["109"]));
+                        workflow[loadId].inputs.image = filename;
+                        workflow["113"].inputs[`image${imgIndex}`] = [loadId, 0];
+                        workflow["114"].inputs[`image${imgIndex}`] = [loadId, 0];
+                    };
 
-                // LoRA Stack
-                const activeLoras = loras.filter(l => l.enabled);
-                workflow["129"].inputs.lora_count = activeLoras.length;
-                for (let i = 1; i <= 10; i++) {
-                    workflow["129"].inputs[`lora_name_${i}`] = "None";
-                    workflow["129"].inputs[`lora_strength_${i}`] = 1.0;
-                }
-                activeLoras.forEach((lora, index) => {
-                    const slot = index + 1;
-                    if (slot <= 10) {
-                        workflow["129"].inputs[`lora_name_${slot}`] = lora.name;
-                        workflow["129"].inputs[`lora_strength_${slot}`] = lora.strength;
+                    if (finalFilenames[1]) addImageChain(2, finalFilenames[1]!);
+                    if (finalFilenames[2]) addImageChain(3, finalFilenames[2]!);
+
+                    // LoRA Stack - Always activate with at least 1 to properly initialize model
+                    const activeLoras = loras.filter(l => l.enabled);
+                    // IMPORTANT: Set lora_count to minimum 1 to force proper model initialization
+                    // This fixes the issue when switching from 2511 GGUF to 2509 Nunchaku
+                    workflow["129"].inputs.lora_count = Math.max(1, activeLoras.length);
+                    for (let i = 1; i <= 10; i++) {
+                        workflow["129"].inputs[`lora_name_${i}`] = "None";
+                        workflow["129"].inputs[`lora_strength_${i}`] = 1.0;
                     }
-                });
+                    activeLoras.forEach((lora, index) => {
+                        const slot = index + 1;
+                        if (slot <= 10) {
+                            workflow["129"].inputs[`lora_name_${slot}`] = lora.name;
+                            workflow["129"].inputs[`lora_strength_${slot}`] = lora.strength;
+                        }
+                    });
+
+
+                } else {
+                    // --- 2511 (GGUF) Workflow ---
+                    workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW_2511));
+                    const missingNode = validateWorkflow(workflow, ["8", "9", "10", "41", "61", "64", "65", "67", "68", "69", "70", "71", "74", "75", "88"]);
+                    if (missingNode) throw new Error(`Invalid Edit Workflow (2511): Missing node ${missingNode}.`);
+
+                    // Set seed, sampler, scheduler on KSampler (node 65)
+                    workflow["65"].inputs.seed = currentSeed;
+                    workflow["65"].inputs.sampler_name = selectedSampler;
+                    workflow["65"].inputs.scheduler = selectedScheduler;
+                    workflow["68"].inputs.prompt = currentPrompt;
+
+                    // Set input image
+                    if (finalFilenames[0]) workflow["41"].inputs.image = finalFilenames[0];
+
+                    // LoRA Chaining for 2511
+                    // The mandatory Lightning LoRA is node 74, which connects to node 88 (GGUF loader)
+                    // We chain additional LoRAs BEFORE the mandatory one (between GGUF and Lightning)
+                    const activeLoras = loras.filter(l => l.enabled);
+
+                    if (activeLoras.length > 0) {
+                        let previousModelNode = "88"; // Start from GGUF loader
+
+                        activeLoras.forEach((lora, index) => {
+                            const loraNodeId = `user_lora_${index}`;
+                            workflow[loraNodeId] = {
+                                inputs: {
+                                    lora_name: lora.name,
+                                    strength_model: lora.strength,
+                                    model: [previousModelNode, 0]
+                                },
+                                class_type: "LoraLoaderModelOnly",
+                                _meta: { title: `User LoRA: ${lora.name}` }
+                            };
+                            previousModelNode = loraNodeId;
+                        });
+
+                        // Connect the mandatory Lightning LoRA (node 74) to the last user LoRA
+                        workflow["74"].inputs.model = [previousModelNode, 0];
+                    }
+                    // If no user LoRAs, the Lightning LoRA already connects to node 88 (GGUF loader)
+                }
 
             } else if (view === 'generate') {
                 // --- GENERATE MODE LOGIC ---
@@ -1438,13 +1492,12 @@ export default function App() {
                         {/* EDIT MODE: Model & Images */}
                         {view === 'edit' && (
                             <>
-                                {/* Model Selection */}
-                                <ModelSelector
-                                    selectedModel={selectedModel}
-                                    setSelectedModel={setSelectedModel}
-                                    availableModels={availableModels}
+                                <VersionSelector
+                                    selectedVersion={editModelVersion}
+                                    onVersionChange={handleVersionChange}
                                     theme={settings.theme}
                                 />
+
 
                                 {/* Image Inputs */}
                                 <div className="grid grid-cols-3 gap-3">
