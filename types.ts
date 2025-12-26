@@ -61,6 +61,7 @@ export interface AppSettings {
   enableFeedback: boolean;
   incognito: boolean;
   stripMetadata: boolean;
+  comfyUIBasePath: string; // Path to ComfyUI installation (for video extension)
 }
 
 export enum GenerationStatus {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { BASE_WORKFLOW, BASE_WORKFLOW_2511, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
+import { BASE_WORKFLOW, BASE_WORKFLOW_2511, GENERATE_WORKFLOW, VIDEO_WORKFLOW, VIDEO_EXTEND_CONCAT_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
 import ImageInput from './components/ImageInput';
@@ -97,6 +97,8 @@ export default function App() {
     const [enhancedVideoMode, setEnhancedVideoMode] = useState(false);
     const [videoDuration, setVideoDuration] = useState(4);
     const [videoResolution, setVideoResolution] = useState('480x832');
+    // Track original video path for concatenation workflow
+    const [originalVideoPath, setOriginalVideoPath] = useState<string | null>(null);
 
 
 
@@ -613,6 +615,114 @@ export default function App() {
         }
     };
 
+    // Handler for extending a video from history - similar to handleExtendVideo but uses history item URL
+    const handleHistoryExtendVideo = async (item: HistoryItem) => {
+        const videoUrl = item.imageUrl;
+
+        // Check if it's actually a video
+        if (!videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i)) {
+            setErrorMsg("Cannot extend non-video content.");
+            return;
+        }
+
+        try {
+            setStatusMessage("Extracting last frame...");
+
+            // Create a video element to load the video and extract the last frame
+            const extractLastFrame = (): Promise<File> => {
+                return new Promise((resolve, reject) => {
+                    const video = document.createElement('video');
+                    video.crossOrigin = 'anonymous';
+                    video.muted = true;
+                    video.playsInline = true;
+
+                    video.onloadedmetadata = () => {
+                        // Seek to the last frame (duration - small offset)
+                        video.currentTime = Math.max(0, video.duration - 0.05);
+                    };
+
+                    video.onseeked = () => {
+                        // Create canvas and draw the frame
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            reject(new Error("Could not create canvas context"));
+                            return;
+                        }
+
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        // Convert to blob, then to File
+                        canvas.toBlob((blob) => {
+                            if (!blob) {
+                                reject(new Error("Could not capture frame"));
+                                return;
+                            }
+
+                            const file = new File([blob], `last_frame_${Date.now()}.png`, { type: 'image/png' });
+                            resolve(file);
+                        }, 'image/png');
+                    };
+
+                    video.onerror = () => {
+                        reject(new Error("Failed to load video"));
+                    };
+
+                    video.src = videoUrl;
+                    video.load();
+                });
+            };
+
+            const lastFrameFile = await extractLastFrame();
+            console.log("Extracted last frame from history:", lastFrameFile.name, lastFrameFile.size, "bytes");
+
+            // Extract video path for concatenation workflow
+            // URL format: /view?filename=xxx&type=output&subfolder=yyy
+            try {
+                const url = new URL(videoUrl, window.location.origin);
+                const filename = url.searchParams.get('filename');
+                const subfolder = url.searchParams.get('subfolder') || '';
+                if (filename) {
+                    const vidPath = subfolder ? `output/${subfolder}/${filename}` : `output/${filename}`;
+                    setOriginalVideoPath(vidPath);
+                    console.log("Stored original video path for concat (from history):", vidPath);
+                }
+            } catch (urlError) {
+                console.warn("Could not parse video URL for concat:", urlError);
+                setOriginalVideoPath(null);
+            }
+
+            // Free memory before loading new models
+            await freeMemory(settings.serverAddress);
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Navigate to video view
+            setView('video');
+
+            // Use the extracted frame as the video input
+            handleFileSelect(0, lastFrameFile, true);
+
+            // Optionally copy the prompt from the original video
+            if (item.prompt) setPrompt(item.prompt);
+
+            setShowHistory(false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Show toast to confirm
+            setToastMessage("Last frame extracted - configure and generate");
+            setTimeout(() => setToastMessage(null), 3000);
+            setStatusMessage("");
+
+        } catch (e) {
+            console.error("Failed to extract last frame from history", e);
+            setErrorMsg("Failed to extract last frame from video: " + (e as Error).message);
+            setStatusMessage("");
+        }
+    };
+
     const handleToggleHistory = async () => {
         if (!showHistory) {
             await loadHistory();
@@ -659,6 +769,112 @@ export default function App() {
         }
     };
 
+    // Handler for extending a video - extracts last frame CLIENT-SIDE and uses for new video generation
+    const handleExtendVideo = async () => {
+        if (!lastGeneratedImage || lastGeneratedImage.length === 0) return;
+
+        const videoUrl = lastGeneratedImage[0];
+
+        // Check if it's actually a video
+        if (!videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i)) {
+            setErrorMsg("Cannot extend non-video content.");
+            return;
+        }
+
+        try {
+            setStatusMessage("Extracting last frame...");
+
+            // Create a video element to load the video and extract the last frame
+            const extractLastFrame = (): Promise<File> => {
+                return new Promise((resolve, reject) => {
+                    const video = document.createElement('video');
+                    video.crossOrigin = 'anonymous';
+                    video.muted = true;
+                    video.playsInline = true;
+
+                    video.onloadedmetadata = () => {
+                        // Seek to the last frame (duration - small offset)
+                        video.currentTime = Math.max(0, video.duration - 0.05);
+                    };
+
+                    video.onseeked = () => {
+                        // Create canvas and draw the frame
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            reject(new Error("Could not create canvas context"));
+                            return;
+                        }
+
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        // Convert to blob, then to File
+                        canvas.toBlob((blob) => {
+                            if (!blob) {
+                                reject(new Error("Could not capture frame"));
+                                return;
+                            }
+
+                            const file = new File([blob], `last_frame_${Date.now()}.png`, { type: 'image/png' });
+                            resolve(file);
+                        }, 'image/png');
+                    };
+
+                    video.onerror = () => {
+                        reject(new Error("Failed to load video"));
+                    };
+
+                    video.src = videoUrl;
+                    video.load();
+                });
+            };
+
+            const lastFrameFile = await extractLastFrame();
+            console.log("Extracted last frame:", lastFrameFile.name, lastFrameFile.size, "bytes");
+
+            // Extract video path for concatenation workflow
+            // URL format: /view?filename=xxx&type=output&subfolder=yyy
+            try {
+                const url = new URL(videoUrl, window.location.origin);
+                const filename = url.searchParams.get('filename');
+                const subfolder = url.searchParams.get('subfolder') || '';
+                if (filename) {
+                    const vidPath = subfolder ? `output/${subfolder}/${filename}` : `output/${filename}`;
+                    setOriginalVideoPath(vidPath);
+                    console.log("Stored original video path for concat:", vidPath);
+                }
+            } catch (urlError) {
+                console.warn("Could not parse video URL for concat, will generate without merge:", urlError);
+                setOriginalVideoPath(null);
+            }
+
+            // Free memory before loading new models
+            await freeMemory(settings.serverAddress);
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Navigate to video view
+            setView('video');
+
+            // Use the extracted frame as the video input (marked as temporary so it cleans up)
+            handleFileSelect(0, lastFrameFile, true);
+
+            setShowResultPreview(false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Show toast to confirm
+            setToastMessage("Last frame extracted - configure and generate");
+            setTimeout(() => setToastMessage(null), 3000);
+            setStatusMessage("");
+
+        } catch (e) {
+            console.error("Failed to extract last frame", e);
+            setErrorMsg("Failed to extract last frame from video: " + (e as Error).message);
+            setStatusMessage("");
+        }
+    };
 
 
     const handleClearResult = () => {
@@ -1151,36 +1367,78 @@ export default function App() {
 
             } else if (view === 'video') {
                 // --- VIDEO MODE LOGIC ---
-                if (!images[0] || (images[0].type === 'file' && !images[0].file) || (images[0].type === 'server' && !images[0].filename)) {
-                    setErrorMsg("Please select an input image.");
-                    setStatus(GenerationStatus.IDLE);
-                    setStatusMessage("");
-                    return;
-                }
+                const isExtendingWithConcat = originalVideoPath !== null;
 
-                // Upload Image if needed
-                let filename = "";
-                if (images[0].type === 'file' && images[0].file) {
-                    filename = await uploadImage(images[0].file, settings.serverAddress, true);
-                    console.log("Uploaded video input:", filename, "isTemporary:", images[0].isTemporary);
-                    if (images[0].isTemporary) {
-                        tempFilesToDelete.current.add(filename);
+                if (isExtendingWithConcat) {
+                    // VIDEO EXTENSION MODE WITH CONCATENATION
+                    // Uses VIDEO_EXTEND_CONCAT_WORKFLOW to merge original + new video
+                    console.log("Video Extension Mode (Concat) - original video:", originalVideoPath);
+
+                    if (!images[0] || (images[0].type === 'file' && !images[0].file)) {
+                        setErrorMsg("Missing extracted frame for extension.");
+                        setStatus(GenerationStatus.IDLE);
+                        setStatusMessage("");
+                        return;
                     }
-                } else if (images[0].type === 'server' && images[0].filename) {
-                    filename = images[0].filename;
+
+                    setStatus(GenerationStatus.QUEUED);
+                    setStatusMessage("Queued (Extension + Merge)...");
+                    workflow = JSON.parse(JSON.stringify(VIDEO_EXTEND_CONCAT_WORKFLOW));
+
+                    // Validate concat workflow nodes (includes 89, 90, 91 for merge)
+                    const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "57", "58", "61", "62", "63", "64", "66", "67", "68", "89", "90", "91"]);
+                    if (missingNode) throw new Error(`Invalid Video Extend Concat Workflow: Missing node ${missingNode}.`);
+
+                    // Construct absolute video path for VHS_LoadVideoPath (node 89)
+                    // originalVideoPath is like "output/wan22_00001.mp4"
+                    // We need full path like "D:/GenAI/imagen/comfy-nunchaku/ComfyUI/output/wan22_00001.mp4"
+                    const comfyBase = settings.comfyUIBasePath || 'D:/GenAI/imagen/comfy-nunchaku/ComfyUI';
+                    const absoluteVideoPath = `${comfyBase}/${originalVideoPath}`;
+                    console.log("Video extension - absolute path:", absoluteVideoPath);
+                    workflow["89"].inputs.video = absoluteVideoPath;
+
+                    // Note: Node 90 (ImageFromBatch) extracts last frame from node 89 for WanImageToVideo
+                    // Node 91 (VHS_MergeImages) combines frames from node 89 + node 8 (VAEDecode output)
+                    // Node 63 (VHS_VideoCombine) uses merged frames from node 91
+
+                    // Set prompt
+                    workflow["6"].inputs.text = currentPrompt;
+
+                    // Clear the original video path after using it
+                    setOriginalVideoPath(null);
+                } else {
+                    // NORMAL VIDEO GENERATION FROM IMAGE
+                    if (!images[0] || (images[0].type === 'file' && !images[0].file) || (images[0].type === 'server' && !images[0].filename)) {
+                        setErrorMsg("Please select an input image.");
+                        setStatus(GenerationStatus.IDLE);
+                        setStatusMessage("");
+                        return;
+                    }
+
+                    // Upload Image if needed
+                    let filename = "";
+                    if (images[0].type === 'file' && images[0].file) {
+                        filename = await uploadImage(images[0].file, settings.serverAddress, true);
+                        console.log("Uploaded video input:", filename, "isTemporary:", images[0].isTemporary);
+                        if (images[0].isTemporary) {
+                            tempFilesToDelete.current.add(filename);
+                        }
+                    } else if (images[0].type === 'server' && images[0].filename) {
+                        filename = images[0].filename;
+                    }
+                    executingInputFilenameRef.current = filename;
+
+                    setStatus(GenerationStatus.QUEUED);
+                    setStatusMessage("Queued...");
+                    workflow = JSON.parse(JSON.stringify(VIDEO_WORKFLOW));
+
+                    const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "52", "57", "58", "61", "62", "63", "64", "66", "67", "68"]);
+                    if (missingNode) throw new Error(`Invalid Video Workflow: Missing node ${missingNode}.`);
+
+                    // Inputs
+                    workflow["52"].inputs.image = filename;
+                    workflow["6"].inputs.text = currentPrompt;
                 }
-                executingInputFilenameRef.current = filename;
-
-                setStatus(GenerationStatus.QUEUED);
-                setStatusMessage("Queued...");
-                workflow = JSON.parse(JSON.stringify(VIDEO_WORKFLOW));
-
-                const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "52", "57", "58", "61", "62", "63", "64", "66", "67", "68"]);
-                if (missingNode) throw new Error(`Invalid Video Workflow: Missing node ${missingNode}.`);
-
-                // Inputs
-                workflow["52"].inputs.image = filename;
-                workflow["6"].inputs.text = currentPrompt;
 
                 // Handle Fast Mode (Swap Models)
                 if (fastVideoMode) {
@@ -1217,7 +1475,8 @@ export default function App() {
                     let w = 720;
                     let h = 1280;
 
-                    if (images[0].type === 'file' && images[0].file) {
+                    // Only try to get dimensions from images[0] if it exists (not in extension mode)
+                    if (images[0] && images[0].type === 'file' && images[0].file) {
                         try {
                             const dims = await getImageDimensions(images[0].file);
                             w = dims.width;
@@ -1225,7 +1484,7 @@ export default function App() {
                         } catch (e) {
                             console.error("Failed to get image dims", e);
                         }
-                    } else if (images[0].previewUrl) {
+                    } else if (images[0] && images[0].previewUrl) {
                         // Try to get dims from preview URL (if preloaded) or fallback
                         // It's harder to get dims from server file without loading it. 
                         // For now, let's load the previewUrl in an invisible Image
@@ -1629,6 +1888,7 @@ export default function App() {
                                 resultRevealed={resultRevealed}
                                 theme={settings.theme}
                                 onUseResult={handleUseResult}
+                                onExtendVideo={handleExtendVideo}
                                 onClear={handleClearResult}
                                 onImageClick={() => setShowResultPreview(true)}
                             />
@@ -1723,6 +1983,7 @@ export default function App() {
                         history={history}
                         onSelect={(item) => handleHistorySelect(item, 'edit')}
                         onSelectVideo={(item) => handleHistorySelect(item, 'video')}
+                        onExtendVideo={handleHistoryExtendVideo}
                         onClose={() => setShowHistory(false)}
                         onDelete={handleDeleteImage}
                         nsfwMode={settings.nsfwMode}

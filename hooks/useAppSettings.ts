@@ -5,6 +5,7 @@ import { THEME_OPTIONS } from '../constants';
 import { adjustBrightness } from '../utils/colorUtils';
 
 const DEFAULT_SERVER = '/api/comfy';
+const DEFAULT_COMFYUI_PATH = 'D:/GenAI/imagen/comfy-nunchaku/ComfyUI';
 
 export const useAppSettings = () => {
     const [settings, setSettings] = useState<AppSettings>(() => {
@@ -28,6 +29,16 @@ export const useAppSettings = () => {
                     parsed.serverAddress = DEFAULT_SERVER;
                 }
 
+                // Migration: Add comfyUIBasePath if missing
+                if (parsed.comfyUIBasePath === undefined) {
+                    parsed.comfyUIBasePath = DEFAULT_COMFYUI_PATH;
+                }
+
+                // Migration: Add stripMetadata if missing
+                if (parsed.stripMetadata === undefined) {
+                    parsed.stripMetadata = false;
+                }
+
                 return parsed;
             } catch (e) {
                 console.error("Failed to parse settings", e);
@@ -43,7 +54,9 @@ export const useAppSettings = () => {
             randomizeSeed: true,
             enableComparison: false,
             enableFeedback: true,
-            incognito: false
+            incognito: false,
+            stripMetadata: false,
+            comfyUIBasePath: DEFAULT_COMFYUI_PATH
         };
     });
 

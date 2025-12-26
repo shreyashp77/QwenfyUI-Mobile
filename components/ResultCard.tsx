@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown } from 'lucide-react';
+import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown, Film } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ResultCardProps {
@@ -9,6 +9,7 @@ interface ResultCardProps {
     resultRevealed: boolean;
     theme: ThemeColor | 'custom';
     onUseResult: (targetView: 'edit' | 'video') => void;
+    onExtendVideo?: () => void;
     onClear: () => void;
     onImageClick: () => void;
 }
@@ -20,6 +21,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
     resultRevealed,
     theme,
     onUseResult,
+    onExtendVideo,
     // onClear,
     onImageClick
 }) => {
@@ -57,6 +59,16 @@ const ResultCard: React.FC<ResultCardProps> = ({
                                 <Monitor size={14} />
                             </button>
                         </>
+                    )}
+                    {/* Show "Extend Video" button for video results */}
+                    {isFirstItemVideo && onExtendVideo && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onExtendVideo(); }}
+                            className={`text-${theme}-500 dark:text-${theme}-400 hover:text-${theme}-700 dark:hover:text-${theme}-300 p-1`}
+                            title="Extend Video (Use last frame as input)"
+                        >
+                            <Film size={14} />
+                        </button>
                     )}
                     <button
                         onClick={(e) => { e.stopPropagation(); window.open(images[0], '_blank'); }}
