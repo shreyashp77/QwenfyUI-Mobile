@@ -40,11 +40,13 @@ export const STYLES: Style[] = [
 export const VIDEO_MODELS = {
   HIGH_NOISE: {
     STANDARD: "wan2.2_i2v_high_noise_14B_Q5_K_M.gguf",
-    FAST: "wan2.2_i2v_high_noise_14B_Q4_K_M.gguf"
+    FAST: "wan2.2_i2v_high_noise_14B_Q4_K_M.gguf",
+    ENHANCED: "DSW_WAN22_I2V_14B_V8_q4High.gguf"
   },
   LOW_NOISE: {
     STANDARD: "wan2.2_i2v_low_noise_14B_Q5_K_M.gguf",
-    FAST: "wan2.2_i2v_low_noise_14B_Q4_K_M.gguf"
+    FAST: "wan2.2_i2v_low_noise_14B_Q4_K_M.gguf",
+    ENHANCED: "DSW_WAN22_I2V_14B_V8_q4Low.gguf"
   }
 };
 

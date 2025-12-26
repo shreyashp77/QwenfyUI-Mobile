@@ -27,6 +27,8 @@ interface AdvancedOptionsProps {
     setExtendVideo: (extend: boolean) => void;
     fastVideoMode: boolean;
     setFastVideoMode: (fast: boolean) => void;
+    enhancedVideoMode?: boolean;
+    setEnhancedVideoMode?: (enhanced: boolean) => void;
 
     // Image State
     selectedResolution: string;
@@ -65,6 +67,8 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
     setExtendVideo,
     fastVideoMode,
     setFastVideoMode,
+    enhancedVideoMode,
+    setEnhancedVideoMode,
     selectedResolution,
     setSelectedResolution,
     customDimensions,
@@ -175,6 +179,25 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
                                     <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${fastVideoMode ? 'translate-x-6' : ''}`} />
                                 </button>
                             </div>
+
+                            {/* Enhanced Mode Toggle (Easter Egg) */}
+                            {settings.enableRemoteInput && setEnhancedVideoMode && (
+                                <div className="flex items-center justify-between p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors mt-2">
+                                    <div className="flex flex-col">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Mode</span>
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gradient-to-r from-red-500 to-rose-600 text-white">18+</span>
+                                        </div>
+                                        <span className="text-[10px] text-gray-500">Uncensored DSW V8 GGUF (No LoRA)</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setEnhancedVideoMode && setEnhancedVideoMode(!enhancedVideoMode)}
+                                        className={`w-12 h-6 rounded-full relative transition-colors ${enhancedVideoMode ? `bg-${settings.theme}-600` : 'bg-gray-300 dark:bg-gray-700'}`}
+                                    >
+                                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${enhancedVideoMode ? 'translate-x-6' : ''}`} />
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
 

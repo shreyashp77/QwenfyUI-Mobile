@@ -90,11 +90,14 @@ export default function App() {
     const [availableLoras, setAvailableLoras] = useState<string[]>([]);
     const [loras, setLoras] = useState<LoraSelection[]>([]); // Dynamic LoRA list
 
+
     // Video Generation State
     const [extendVideo, setExtendVideo] = useState(false);
     const [fastVideoMode, setFastVideoMode] = useState(true);
+    const [enhancedVideoMode, setEnhancedVideoMode] = useState(false);
     const [videoDuration, setVideoDuration] = useState(4);
     const [videoResolution, setVideoResolution] = useState('480x832');
+
 
 
 
@@ -1184,6 +1187,24 @@ export default function App() {
                     workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.STANDARD;
                 }
 
+                // Enhanced Mode (Easter Egg) - Overrides Fast/Standard
+                if (settings.enableRemoteInput && enhancedVideoMode) {
+                    console.log("Using Enhanced Mode (DSW Models, No LoRA)");
+
+                    // 1. Set Models
+                    workflow["61"].inputs.unet_name = VIDEO_MODELS.HIGH_NOISE.ENHANCED;
+                    workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.ENHANCED;
+
+                    // 2. Bypass LoRA Nodes
+                    // Standard High: Unet(61) -> LoRA(64) -> Sampling(67)
+                    // Enhanced High: Unet(61) -> Sampling(67)
+                    workflow["67"].inputs.model = ["61", 0];
+
+                    // Standard Low: Unet(62) -> LoRA(66) -> Sampling(68)
+                    // Enhanced Low: Unet(62) -> Sampling(68)
+                    workflow["68"].inputs.model = ["62", 0];
+                }
+
                 // Resolution
                 if (videoResolution === 'auto') {
                     // Calculate from input image
@@ -1614,7 +1635,15 @@ export default function App() {
                             extendVideo={extendVideo}
                             setExtendVideo={setExtendVideo}
                             fastVideoMode={fastVideoMode}
-                            setFastVideoMode={setFastVideoMode}
+                            setFastVideoMode={(val) => {
+                                setFastVideoMode(val);
+                                if (val) setEnhancedVideoMode(false);
+                            }}
+                            enhancedVideoMode={enhancedVideoMode}
+                            setEnhancedVideoMode={(val) => {
+                                setEnhancedVideoMode(val);
+                                if (val) setFastVideoMode(false);
+                            }}
                             selectedResolution={selectedResolution}
                             setSelectedResolution={setSelectedResolution}
                             customDimensions={customDimensions}
