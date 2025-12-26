@@ -271,7 +271,13 @@ export default function App() {
                 ...item,
                 imageUrl: `${settings.serverAddress}/view?filename=${encodeURIComponent(item.filename)}&type=${item.imageType}&subfolder=${encodeURIComponent(item.subfolder || '')}&t=${item.timestamp}`
             }));
-            setHistory(itemsWithUrls);
+
+            // Deduplicate items based on ID to ensure UI is clean
+            const uniqueItems = itemsWithUrls.filter((item, index, self) =>
+                index === self.findIndex((t) => t.id === item.id)
+            );
+
+            setHistory(uniqueItems);
         } catch (e) {
             console.error("Failed to load history from server", e);
         }
@@ -1396,6 +1402,11 @@ export default function App() {
 
 
                 setHistory(prev => {
+                    // Prevent duplicate entries for the same promptId
+                    if (prev.some(item => item.id === newItem.id)) {
+                        return prev;
+                    }
+
                     const newHistory = [newItem, ...prev];
 
                     // Queue the save operation to run sequentially
