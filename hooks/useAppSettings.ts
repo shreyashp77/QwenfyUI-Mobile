@@ -5,7 +5,7 @@ import { THEME_OPTIONS } from '../constants';
 import { adjustBrightness } from '../utils/colorUtils';
 
 const DEFAULT_SERVER = '/api/comfy';
-const DEFAULT_COMFYUI_PATH = 'D:/GenAI/imagen/comfy-nunchaku/ComfyUI';
+const DEFAULT_COMFYUI_PATH = import.meta.env.VITE_COMFYUI_PATH || '';
 
 export const useAppSettings = () => {
     const [settings, setSettings] = useState<AppSettings>(() => {

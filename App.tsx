@@ -360,28 +360,42 @@ export default function App() {
                             // We use specific Node IDs from VIDEO_WORKFLOW to map progress ranges
                             const isVideoView = viewRef.current === 'video';
                             if (isVideoView && node) {
-                                // Node 57: First KSampler (Steps 0-2) -> 0% - 30%
-                                if (node === "57") {
-                                    percentage = Math.floor((value / max) * 30);
+                                // Video Extension preprocessing nodes - map to 0-10%
+                                if (node === "89") {
+                                    // VHS_LoadVideoPath - loading original video
+                                    percentage = Math.floor((value / max) * 8);
+                                    setStatusMessage("Loading original video...");
                                 }
-                                // Node 58: Second KSampler (Steps 2-End) -> 30% - 70%
+                                else if (node === "91") {
+                                    // ImageBatch - merging frames, small step
+                                    percentage = 8 + Math.floor((value / max) * 2);
+                                }
+                                // Node 57: First KSampler (Steps 0-2) -> 10% - 35%
+                                else if (node === "57") {
+                                    percentage = 10 + Math.floor((value / max) * 25);
+                                }
+                                // Node 58: Second KSampler (Steps 2-End) -> 35% - 70%
                                 else if (node === "58") {
-                                    percentage = 30 + Math.floor((value / max) * 40);
+                                    percentage = 35 + Math.floor((value / max) * 35);
                                 }
-                                // Node 83: RIFE VFI -> 70% - 100%
+                                // Node 83: RIFE VFI -> 70% - 92%
                                 else if (node === "83") {
-                                    percentage = 70 + Math.floor((value / max) * 30);
+                                    percentage = 70 + Math.floor((value / max) * 22);
                                 }
-                                // Node 63 or 82: Video Combine -> 95-100% (usually doesn't emit progress steps, but just in case)
+                                // Node 8: VAEDecode -> 92% - 95%
+                                else if (node === "8") {
+                                    percentage = 92 + Math.floor((value / max) * 3);
+                                    setStatusMessage("Decoding video...");
+                                }
+                                // Node 63 or 82: Video Combine -> 95-100%
                                 else if (node === "63" || node === "82") {
                                     percentage = 95 + Math.floor((value / max) * 5);
+                                    setStatusMessage("Combining video...");
                                 }
-                                // Fallback phase logic if node ID doesn't match known ones but we are in video
+                                // Fallback: Use global 0-100 for any other node but ensure monotonic increase
                                 else {
-                                    // Use the previous cumulative/phase logic as fallback? 
-                                    // Or just let it be global 0-100 for unknown nodes (like VAE Decode)
-                                    // VAE Decode (Node 8) takes time too.
-                                    // Let's rely on monotonic increases.
+                                    // Keep progress at whatever was last set, or use global percentage
+                                    // Don't let unknown nodes reset progress to lower value
                                 }
                             } else if (isVideoView) {
                                 // Fallback for video if no node ID
@@ -1392,7 +1406,10 @@ export default function App() {
                     // Construct absolute video path for VHS_LoadVideoPath (node 89)
                     // originalVideoPath is like "output/wan22_00001.mp4"
                     // We need full path like "D:/GenAI/imagen/comfy-nunchaku/ComfyUI/output/wan22_00001.mp4"
-                    const comfyBase = settings.comfyUIBasePath || 'D:/GenAI/imagen/comfy-nunchaku/ComfyUI';
+                    const comfyBase = settings.comfyUIBasePath || import.meta.env.VITE_COMFYUI_PATH || '';
+                    if (!comfyBase) {
+                        throw new Error("ComfyUI path not configured. Set VITE_COMFYUI_PATH in .env file or configure in settings.");
+                    }
                     const absoluteVideoPath = `${comfyBase}/${originalVideoPath}`;
                     console.log("Video extension - absolute path:", absoluteVideoPath);
                     workflow["89"].inputs.video = absoluteVideoPath;
