@@ -39,6 +39,11 @@ export const useAppSettings = () => {
                     parsed.stripMetadata = false;
                 }
 
+                // Migration: Default incognito to true for privacy
+                if (parsed.incognito === undefined) {
+                    parsed.incognito = true;
+                }
+
                 return parsed;
             } catch (e) {
                 console.error("Failed to parse settings", e);
@@ -54,7 +59,7 @@ export const useAppSettings = () => {
             randomizeSeed: true,
             enableComparison: false,
             enableFeedback: true,
-            incognito: false,
+            incognito: true,
             stripMetadata: false,
             comfyUIBasePath: DEFAULT_COMFYUI_PATH
         };
