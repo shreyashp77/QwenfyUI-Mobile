@@ -23,7 +23,8 @@ const HistoryThumbnail: React.FC<{
     onClick: () => void;
 }> = ({ item, nsfwMode, onClick }) => {
     const [hasError, setHasError] = useState(false);
-    const isVideo = item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i);
+    // Check filename for video extensions (handles both .mp4 and .mp4.enc)
+    const isVideo = item.filename.match(/\.(mp4|webm|mov)(\.enc)?$/i);
 
     if (hasError) {
         return (
@@ -298,7 +299,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                     </div>
 
                                     {/* Compare Button (if input exists and not a video) */}
-                                    {item.inputFilename && !item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) && (
+                                    {item.inputFilename && !item.filename.match(/\.(mp4|webm|mov)(\.enc)?$/i) && (
                                         <div className="pt-1">
                                             <button
                                                 onClick={(e) => handleCompare(e, item)}
@@ -311,7 +312,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
 
                                     {/* Actions */}
                                     <div className="flex justify-between items-center gap-2 pt-2 mt-auto">
-                                        {!item.imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                        {!item.filename.match(/\.(mp4|webm|mov)(\.enc)?$/i) ? (
                                             <>
                                                 <button
                                                     onClick={() => onSelect(item)}
@@ -412,7 +413,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                             </div>
                         ) : (
                             <>
-                                {history[previewIndex].imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                {history[previewIndex].filename.match(/\.(mp4|webm|mov)(\.enc)?$/i) ? (
                                     <video
                                         src={history[previewIndex].imageUrl}
                                         controls
@@ -439,7 +440,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                     </div>
                                 )}
 
-                                {history[previewIndex].imageUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                                {history[previewIndex].filename.match(/\.(mp4|webm|mov)(\.enc)?$/i) ? (
                                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 w-full justify-center px-4">
                                         <a
                                             href={history[previewIndex].imageUrl}

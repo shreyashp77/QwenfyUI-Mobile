@@ -12,6 +12,7 @@ interface ResultCardProps {
     onExtendVideo?: () => void;
     onClear: () => void;
     onImageClick: () => void;
+    forceVideo?: boolean;
 }
 
 const ResultCard: React.FC<ResultCardProps> = ({
@@ -23,7 +24,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
     onUseResult,
     onExtendVideo,
     // onClear,
-    onImageClick
+    onImageClick,
+    forceVideo
 }) => {
     const [isMinimized, setIsMinimized] = React.useState(false);
 
@@ -90,7 +92,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
                 <div className={`relative ${images.length > 1 ? 'grid grid-cols-2 gap-0.5' : 'min-h-[150px] bg-gray-100 dark:bg-black/50'}`}>
                     {images.map((imgUrl, idx) => (
                         <div key={idx} className={`relative ${images.length > 1 ? 'aspect-square h-full' : 'w-full flex justify-center'} bg-gray-100 dark:bg-black/50 group cursor-pointer`} onClick={onImageClick}>
-                            {imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
+                            {forceVideo || imgUrl.match(/\.(mp4|webm|mov)($|\?|&)/i) ? (
                                 <video
                                     src={imgUrl}
                                     className={images.length > 1 ? "w-full h-full object-cover" : "w-full h-auto max-h-[70vh] object-contain"}

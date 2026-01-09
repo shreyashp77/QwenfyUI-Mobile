@@ -1,7 +1,7 @@
 
 import { ComfyWorkflow, SavedPrompt, HistoryItem } from "../types";
 
-export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true, imageType: 'input' | 'temp' = 'input'): Promise<string> => {
+export const uploadImage = async (file: File, serverAddress: string, overwrite: boolean = true, imageType: 'input' | 'temp' | 'output' = 'input'): Promise<string> => {
     const formData = new FormData();
     formData.append("image", file);
     if (overwrite) {

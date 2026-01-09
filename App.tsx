@@ -22,6 +22,8 @@ import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
 import { hashPin } from './utils/cryptoUtils';
 import { stripImageMetadata } from './utils/imageUtils'; // NEW
+import { DeviceEncryption } from './utils/cryptoUtils'; // NEW
+import { PREVIEW_IMAGE_NODE } from './constants'; // NEW
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -117,7 +119,7 @@ export default function App() {
 
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
     const historySaveQueue = useRef<Promise<void>>(Promise.resolve()); // Sequential queue for history saves
-    const tempFilesToDelete = useRef<Set<string>>(new Set()); // Track temp files for deferred cleanup
+    const tempFilesToDelete = useRef<Map<string, string>>(new Map()); // Track temp files for deferred cleanup {filename -> type}
     const extendVideoPathRef = useRef<string | null>(null); // Track original video path for concatenation in extend mode
 
 
@@ -129,7 +131,12 @@ export default function App() {
         // Enable sound if feedback is enabled AND (haptics not supported OR sound preferred)
         // Logic: If haptics are supported, we ONLY use haptics. If not (iOS), we use sound.
         sound.setEnabled(settings.enableFeedback && !hapticsSupported);
-    }, [settings.enableFeedback]);
+
+        // Pre-init encryption key if Incognito is enabled
+        if (settings.incognito) {
+            DeviceEncryption.init();
+        }
+    }, [settings.enableFeedback, settings.incognito]);
 
     // --- Effects ---
 
@@ -270,11 +277,43 @@ export default function App() {
             }));
 
             // Deduplicate items based on ID to ensure UI is clean
+            // Deduplicate items based on ID to ensure UI is clean
             const uniqueItems = itemsWithUrls.filter((item, index, self) =>
                 index === self.findIndex((t) => t.id === item.id)
             );
 
-            setHistory(uniqueItems);
+            // POST-PROCESS for Decryption
+            // We need to check if any item is encrypted (.enc) and decrypt it for display
+            const decryptedItems = await Promise.all(
+                uniqueItems.map(async (item) => {
+                    if (item.filename.endsWith('.enc')) {
+                        try {
+                            // Fetch the encrypted file
+                            const res = await fetch(item.imageUrl);
+                            if (res.ok) {
+                                const blob = await res.blob();
+                                // Infer Mime Type
+                                let mimeType = 'image/png';
+                                if (item.filename.includes('.mp4')) mimeType = 'video/mp4';
+                                if (item.filename.includes('.gif')) mimeType = 'image/gif';
+                                if (item.filename.includes('.jpg') || item.filename.includes('.jpeg')) mimeType = 'image/jpeg';
+                                if (item.filename.includes('.webp')) mimeType = 'image/webp';
+
+                                const decryptedBlob = await DeviceEncryption.decryptFile(blob, mimeType);
+                                const decryptedUrl = URL.createObjectURL(decryptedBlob);
+                                return { ...item, imageUrl: decryptedUrl };
+                            }
+                        } catch (e) {
+                            console.error(`Failed to decrypt history item ${item.filename}`, e);
+                            // Return item but maybe with a placeholder or broken image? 
+                            // Or keep original URL so user sees it's broken/encrypted
+                        }
+                    }
+                    return item;
+                })
+            );
+
+            setHistory(decryptedItems);
         } catch (e) {
             console.error("Failed to load history from server", e);
         }
@@ -562,7 +601,7 @@ export default function App() {
 
             // If Incognito, mark for deletion after generation
             if (settings.incognito) {
-                tempFilesToDelete.current.add(filename);
+                tempFilesToDelete.current.set(filename, 'input');
             }
 
             setImages(prev => {
@@ -704,7 +743,7 @@ export default function App() {
             // Store the uploaded video filename for concatenation
             extendVideoPathRef.current = uploadedVideoFilename;
             // Also mark it for cleanup after generation
-            tempFilesToDelete.current.add(uploadedVideoFilename);
+            tempFilesToDelete.current.set(uploadedVideoFilename, 'input');
 
             // Free memory before loading new models
             await freeMemory(settings.serverAddress);
@@ -858,7 +897,7 @@ export default function App() {
             // Store the uploaded video filename for concatenation
             extendVideoPathRef.current = uploadedVideoFilename;
             // Also mark it for cleanup after generation
-            tempFilesToDelete.current.add(uploadedVideoFilename);
+            tempFilesToDelete.current.set(uploadedVideoFilename, 'input');
 
             // Free memory before loading new models
             await freeMemory(settings.serverAddress);
@@ -1046,42 +1085,56 @@ export default function App() {
 
     const cleanupTempFiles = async () => {
         // Delete all files that were marked for cleanup
-        // Files are added to this set when: isTemporary (AI-generated input) OR incognito mode was on at upload time
-
+        // tempFilesToDelete is a Map<filename, type>
         if (tempFilesToDelete.current.size === 0) return;
-        const files = Array.from(tempFilesToDelete.current);
-        console.log("Cleaning up temporary input files:", files);
+
+        console.log("Cleaning up temporary files:", Array.from(tempFilesToDelete.current.entries()));
 
         // Helper to wait
         const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-        for (const filename of files) {
+        // Iterate Map
+        for (const [filename, type] of tempFilesToDelete.current.entries()) {
             let deleted = false;
             const maxRetries = 3;
 
             for (let i = 0; i < maxRetries; i++) {
                 try {
-                    const res = await fetch(`/api/delete-input-image`, {
-                        method: 'POST',
-                        body: JSON.stringify({ filename })
-                    });
+                    let res: Response;
+
+                    if (type === 'temp' || type === 'output') {
+                        // Use the new ComfyUI custom endpoint for temp/output files
+                        res = await fetch(`${settings.serverAddress}/delete_temp_file`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filename, type })
+                        });
+                    } else {
+                        // Use the Vite dev server API for input files
+                        res = await fetch('/api/delete-input-image', {
+                            method: 'POST',
+                            body: JSON.stringify({ filename })
+                        });
+                    }
+
                     const data = await res.json();
 
-                    if (data.success) {
-                        console.log(`Deleted ${filename} successfully.`);
+                    // Check for success (custom endpoint uses "status", dev API uses "success")
+                    if (data.success || data.status === 'success') {
+                        console.log(`Deleted ${filename} (${type}) successfully.`);
                         deleted = true;
                         tempFilesToDelete.current.delete(filename);
                         break;
                     } else {
-                        // warning
+                        console.warn(`Delete failed for ${filename}:`, data.message || data.error);
                     }
                 } catch (e) {
-                    // error
+                    console.error(`Delete error for ${filename}:`, e);
                 }
                 if (i < maxRetries - 1) await delay(1000);
             }
             if (!deleted) {
-                console.warn(`Failed to delete ${filename} after retries.`);
+                console.warn(`Failed to delete ${filename} (${type}) after retries.`);
             }
         }
     };
@@ -1219,7 +1272,7 @@ export default function App() {
 
                             // If temporary (history item) OR Incognito, mark for deletion
                             if (img.isTemporary || settings.incognito) {
-                                tempFilesToDelete.current.add(filename);
+                                tempFilesToDelete.current.set(filename, 'input');
                             }
                         } else if (img.type === 'server' && img.filename) {
                             finalFilenames[i] = img.filename;
@@ -1234,7 +1287,22 @@ export default function App() {
                 setStatus(GenerationStatus.QUEUED);
                 setStatusMessage("Queued...");
                 workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW));
-                const missingNode = validateWorkflow(workflow, ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"]);
+
+                // INCCOGITO MODE: Replace SaveImage with PreviewImage
+                if (settings.incognito) {
+                    // Remove SaveImage (Node 79)
+                    delete workflow["79"];
+                    // Add PreviewImage
+                    // We need to find a unique ID for it, "79" is fine to repurpose or use "preview_output"
+                    workflow["79"] = JSON.parse(JSON.stringify(PREVIEW_IMAGE_NODE));
+                    workflow["79"].inputs.images = ["8", 0];
+                }
+
+                const requiredNodes = ["3", "8", "38", "39", "66", "100", "102", "109", "110", "113", "114", "118", "129"];
+                // Add SaveImage only if NOT incognito (since we swapped it)
+                if (!settings.incognito) requiredNodes.push("79");
+
+                const missingNode = validateWorkflow(workflow, requiredNodes);
                 if (missingNode) throw new Error(`Invalid Edit Workflow: Missing node ${missingNode}.`);
 
                 workflow["3"].inputs.seed = currentSeed;
@@ -1285,7 +1353,19 @@ export default function App() {
                 setStatusMessage("Queued...");
                 workflow = JSON.parse(JSON.stringify(GENERATE_WORKFLOW));
 
-                const missingNode = validateWorkflow(workflow, ["3", "6", "7", "8", "9", "13", "16", "17", "18"]);
+                // INCCOGITO MODE: Replace SaveImage with PreviewImage
+                if (settings.incognito) {
+                    // Remove SaveImage (Node 9)
+                    delete workflow["9"];
+                    // Add PreviewImage as Node 9
+                    workflow["9"] = JSON.parse(JSON.stringify(PREVIEW_IMAGE_NODE));
+                    workflow["9"].inputs.images = ["8", 0];
+                }
+
+                const requiredNodes = ["3", "6", "7", "8", "13", "16", "17", "18"];
+                if (!settings.incognito) requiredNodes.push("9");
+
+                const missingNode = validateWorkflow(workflow, requiredNodes);
                 if (missingNode) throw new Error(`Invalid Generate Workflow: Missing node ${missingNode}.`);
 
                 workflow["3"].inputs.seed = currentSeed;
@@ -1340,7 +1420,7 @@ export default function App() {
                     filename = await uploadImage(images[0].file, settings.serverAddress, true);
                     console.log("Uploaded video input:", filename, "isTemporary:", images[0].isTemporary);
                     if (images[0].isTemporary) {
-                        tempFilesToDelete.current.add(filename);
+                        tempFilesToDelete.current.set(filename, 'input');
                     }
                 } else if (images[0].type === 'server' && images[0].filename) {
                     filename = images[0].filename;
@@ -1377,6 +1457,17 @@ export default function App() {
 
                 // Set prompt (common for both workflows)
                 workflow["6"].inputs.text = currentPrompt;
+
+                // INCCOGITO MODE: Replace VideoCombine (Save) with Preview logic?
+                // VideoCombine IS the save node. It generates an mp4.
+                // We cannot easily swap VideoCombine for PreviewImage because PreviewImage expects images, not video.
+                // However, VideoCombine with save_output=true puts it in output folder.
+                // We should probably set save_output=false if we could trap the temp file, but VHS nodes are tricky.
+                // STRATEGY FOR VIDEO INCOGNITO:
+                // We will let it generate to output (since there is no easy PreviewVideo node that returns a blob to frontend without saving),
+                // BUT we will rely on encryption logic to immediately encrypt and overwrite/delete the cleartext file on server.
+                // Actually, let's look at `fetchGenerationResult`.
+                // If we can't swap the node, we accept it writes to disk, but we treat the result retrieval differently.
 
                 // Handle Fast Mode (Swap Models)
                 if (fastVideoMode) {
@@ -1505,6 +1596,12 @@ export default function App() {
                     delete workflow["82"];
                     delete workflow["83"];
                 }
+
+                // INCOGNITO VIDEO: Force save to temp
+                if (settings.incognito) {
+                    if (workflow["63"]) workflow["63"].inputs.save_output = false;
+                    if (workflow["82"] && extendVideo) workflow["82"].inputs.save_output = false;
+                }
             }
 
             // 4. Queue Loop
@@ -1594,8 +1691,66 @@ export default function App() {
 
                 const duration = Date.now() - startTimeRef.current;
                 setLastGenerationDuration(duration);
+
+                let displayUrl = imageUrl;
+                let finalFilename = imgInfo.filename;
+                let finalType = imgInfo.type;
+
+                // DEBUG: Log encryption pre-conditions
+                console.log("=== INCOGNITO CHECK ===");
+                console.log("settings.incognito:", settings.incognito);
+                console.log("imgInfo:", imgInfo);
+                console.log("imageUrl:", imageUrl);
+
+                // INCOGNITO ENCRYPTION FLOW
+                if (settings.incognito) {
+                    console.log(">>> ENTERING INCOGNITO ENCRYPTION BLOCK <<<");
+                    try {
+                        // 1. Fetch raw blob (from temp/preview)
+                        console.log("Step 1: Fetching file from:", imageUrl);
+                        const res = await fetch(imageUrl);
+                        if (!res.ok) throw new Error(`Failed to fetch temp file: ${res.statusText}`);
+                        const blob = await res.blob();
+                        console.log("Step 1 Complete: Blob fetched, size:", blob.size, "type:", blob.type);
+
+                        // 2. Encrypt
+                        console.log("Step 2: Creating File object for encryption...");
+                        const fileToEncrypt = new File([blob], imgInfo.filename, { type: blob.type });
+                        console.log("Step 2a: File created:", fileToEncrypt.name, fileToEncrypt.type, fileToEncrypt.size);
+
+                        console.log("Step 2b: Calling DeviceEncryption.encryptFile...");
+                        const encryptedFile = await DeviceEncryption.encryptFile(fileToEncrypt);
+                        console.log("Step 2 Complete: Encrypted file:", encryptedFile.name, encryptedFile.size);
+
+                        // 3. Upload encrypted file to OUTPUT
+                        console.log("Step 3: Uploading encrypted file to output folder...");
+                        const encFilename = await uploadImage(encryptedFile, settings.serverAddress, true, 'output');
+                        console.log("Step 3 Complete: Uploaded as:", encFilename);
+
+                        // 4. Update display to use local blob
+                        displayUrl = URL.createObjectURL(blob);
+                        finalFilename = encFilename;
+                        finalType = 'output';
+                        console.log("Step 4 Complete: Display URL set to blob, finalFilename:", finalFilename);
+
+                        // 5. Cleanup: Mark the original unencrypted temp file for deletion
+                        if (imgInfo.filename) {
+                            console.log("Step 5: Marking temp file for deletion:", imgInfo.filename, "type:", imgInfo.type);
+                            tempFilesToDelete.current.set(imgInfo.filename, imgInfo.type || 'temp');
+                        }
+                        console.log(">>> INCOGNITO ENCRYPTION COMPLETE <<<");
+
+                    } catch (e: any) {
+                        console.error("!!! ENCRYPTION FLOW FAILED !!!", e);
+                        setErrorMsg("Incognito Error: " + (e.message || "Unknown error"));
+                        throw e;
+                    }
+                } else {
+                    console.log(">>> INCOGNITO IS OFF, SKIPPING ENCRYPTION <<<");
+                }
+
                 // Replace existing images (to clear previous generation)
-                setLastGeneratedImage([imageUrl]);
+                setLastGeneratedImage([displayUrl]);
                 setResultRevealed(false);
 
                 setStatus(GenerationStatus.FINISHED);
@@ -1604,15 +1759,21 @@ export default function App() {
 
                 const newItem: HistoryItem = {
                     id: promptId,
-                    filename: imgInfo.filename,
-                    subfolder: imgInfo.subfolder || '',
-                    imageType: imgInfo.type,
-                    inputFilename: executingInputFilenameRef.current,
-                    imageUrl: imageUrl,
                     prompt: executingPromptRef.current,
                     seed: executingSeedRef.current,
+                    // Use the ENCRYPTED filename/type if incognito
+                    filename: finalFilename,
+                    imageType: finalType,
                     timestamp: Date.now(),
-                    duration: duration
+                    // For history UI, we need a displayable URL.
+                    // If we just encrypted it, we used a blob. 
+                    // But for PERMANENT history, we need the server URL (which is encrypted).
+                    // We will store the base URL, and let loadHistory handle decryption on reload.
+                    // BUT for current session, we want to show the unencrypted blob.
+                    // We can cheat: store the blob URL in the active state, but save the real filename to server.
+                    // History state `imageUrl` property is what the UI reads.
+                    imageUrl: displayUrl,
+                    subfolder: imgInfo.subfolder || ''
                 };
 
 
@@ -1848,6 +2009,7 @@ export default function App() {
                                 onExtendVideo={handleExtendVideo}
                                 onClear={handleClearResult}
                                 onImageClick={() => setShowResultPreview(true)}
+                                forceVideo={view === 'video'}
                             />
                         )}
 

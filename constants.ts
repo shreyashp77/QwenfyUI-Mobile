@@ -1335,3 +1335,16 @@ export const VIDEO_EXTEND_CONCAT_WORKFLOW: ComfyWorkflow = {
     }
   }
 };
+
+export const PREVIEW_IMAGE_NODE = {
+  "inputs": {
+    "images": [
+      "8",
+      0
+    ]
+  },
+  "class_type": "PreviewImage",
+  "_meta": {
+    "title": "Preview Image"
+  }
+};
