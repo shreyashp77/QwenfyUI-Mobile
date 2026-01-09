@@ -20,7 +20,7 @@ import PinOverlay from './components/PinOverlay'; // NEW
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
-import { hashPin, getOrCreateMasterKey, exportKey, generateIV, toBase64 } from './utils/cryptoUtils';
+import { hashPin } from './utils/cryptoUtils';
 import { stripImageMetadata } from './utils/imageUtils'; // NEW
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
@@ -46,8 +46,6 @@ export default function App() {
     // PIN State
     const [isLocked, setIsLocked] = useState(false);
     const [serverPinHash, setServerPinHash] = useState<string | null>(null);
-    const [sessionMasterKey, setSessionMasterKey] = useState<CryptoKey | null>(null);
-    const [sessionPin, setSessionPin] = useState<string | null>(null);
 
     // Model
     const [selectedModel] = useState<string>(DEFAULT_MODEL); // Fixed r128 model for 2509
@@ -314,11 +312,6 @@ export default function App() {
                     const msg = JSON.parse(event.data);
                     const activePromptId = currentPromptIdRef.current;
 
-                    // Debug: Log ALL WebSocket messages
-                    if (msg.type === 'progress' || msg.type === 'executing' || msg.type === 'execution_start') {
-                        console.log(`[WS Message] Type: ${msg.type}`, msg.data);
-                    }
-
                     // Only process messages for the current prompt to avoid noise
                     if (msg.data && msg.data.prompt_id && activePromptId && msg.data.prompt_id !== activePromptId) {
                         return;
@@ -359,15 +352,9 @@ export default function App() {
                         const shouldProcessProgress = (messagePromptId === activePromptId) ||
                             (!activePromptId && messagePromptId);
 
-                        // Debug: Log all progress messages to see what's being filtered
-                        console.log(`[Progress Raw] shouldProcess: ${shouldProcessProgress}, msgPromptId: ${messagePromptId}, activePromptId: ${activePromptId}, node: ${msg.data?.node}`);
-
                         if (shouldProcessProgress) {
                             const { value, max, node } = msg.data;
                             let percentage = Math.floor((value / max) * 100);
-
-                            // Debug logging for progress
-                            console.log(`[Progress] Node: ${node}, Value: ${value}/${max}, Percentage: ${percentage}%`);
 
                             // Special handling for Video generation
                             // We use specific Node IDs from VIDEO_WORKFLOW to map progress ranges
@@ -1434,8 +1421,8 @@ export default function App() {
                     // Set prompt
                     workflow["6"].inputs.text = currentPrompt;
 
-                    // Note: originalVideoPath is NOT cleared here to allow retrying the extension
-                    // It will be cleared when the user selects a new input image
+                    // Clear the original video path after using it
+                    setOriginalVideoPath(null);
                 } else {
                     // NORMAL VIDEO GENERATION FROM IMAGE
                     if (!images[0] || (images[0].type === 'file' && !images[0].file) || (images[0].type === 'server' && !images[0].filename)) {
@@ -1497,9 +1484,6 @@ export default function App() {
                     // Standard Low: Unet(62) -> LoRA(66) -> Sampling(68)
                     // Enhanced Low: Unet(62) -> Sampling(68)
                     workflow["68"].inputs.model = ["62", 0];
-
-                    // 3. Use NSFW Text Encoder
-                    workflow["38"].inputs.clip_name = "nsfw_wan_umt5-xxl_fp8_scaled.safetensors";
                 }
 
                 // Resolution
@@ -1666,45 +1650,8 @@ export default function App() {
             const outputFiles = getOutputFiles(outputs[outputNodeId]);
             if (outputFiles.length > 0) {
                 const imgInfo = outputFiles[0];
-                let imageUrl = `${settings.serverAddress}/view?filename=${encodeURIComponent(imgInfo.filename)}&type=${imgInfo.type}&subfolder=${encodeURIComponent(imgInfo.subfolder || '')}&t=${Date.now()}`;
 
-                // === INCOGNITO ENCRYPTION ===
-                // If in incognito mode with a master key, encrypt the output file
-                if (settings.incognito && sessionMasterKey && sessionPin) {
-                    try {
-                        console.log("[Encryption] Encrypting output file:", imgInfo.filename);
-
-                        // Export master key for server-side encryption
-                        const keyBytes = await exportKey(sessionMasterKey);
-                        const iv = generateIV();
-                        const keyBase64 = toBase64(keyBytes);
-                        const ivBase64 = toBase64(iv);
-
-                        // Call server to encrypt the file
-                        const encryptRes = await fetch('/api/encrypt-output', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                filename: imgInfo.filename,
-                                key: keyBase64,
-                                iv: ivBase64
-                            })
-                        });
-
-                        const encryptData = await encryptRes.json();
-                        if (encryptData.success) {
-                            console.log("[Encryption] File encrypted successfully:", encryptData.encryptedFilename);
-
-                            // Update URL to use decryption endpoint
-                            imageUrl = `/api/decrypt-view?filename=${encodeURIComponent(encryptData.encryptedFilename)}&key=${encodeURIComponent(keyBase64)}&iv=${encodeURIComponent(ivBase64)}`;
-                        } else {
-                            console.error("[Encryption] Failed to encrypt:", encryptData.error);
-                        }
-                    } catch (encryptError) {
-                        console.error("[Encryption] Encryption error:", encryptError);
-                        // Continue with unencrypted URL as fallback
-                    }
-                }
+                const imageUrl = `${settings.serverAddress}/view?filename=${encodeURIComponent(imgInfo.filename)}&type=${imgInfo.type}&subfolder=${encodeURIComponent(imgInfo.subfolder || '')}&t=${Date.now()}`;
 
                 const duration = Date.now() - startTimeRef.current;
                 setLastGenerationDuration(duration);
@@ -1716,44 +1663,40 @@ export default function App() {
                 setStatusMessage("Finished");
                 setProgress(100);
 
-                // === SKIP HISTORY IN INCOGNITO MODE ===
-                if (!settings.incognito) {
-                    const newItem: HistoryItem = {
-                        id: promptId,
-                        filename: imgInfo.filename,
-                        subfolder: imgInfo.subfolder || '',
-                        imageType: imgInfo.type,
-                        inputFilename: executingInputFilenameRef.current,
-                        imageUrl: imageUrl,
-                        prompt: executingPromptRef.current,
-                        seed: executingSeedRef.current,
-                        timestamp: Date.now(),
-                        duration: duration
-                    };
+                const newItem: HistoryItem = {
+                    id: promptId,
+                    filename: imgInfo.filename,
+                    subfolder: imgInfo.subfolder || '',
+                    imageType: imgInfo.type,
+                    inputFilename: executingInputFilenameRef.current,
+                    imageUrl: imageUrl,
+                    prompt: executingPromptRef.current,
+                    seed: executingSeedRef.current,
+                    timestamp: Date.now(),
+                    duration: duration
+                };
 
-                    setHistory(prev => {
-                        // Prevent duplicate entries for the same promptId
-                        if (prev.some(item => item.id === newItem.id)) {
-                            return prev;
+
+                setHistory(prev => {
+                    // Prevent duplicate entries for the same promptId
+                    if (prev.some(item => item.id === newItem.id)) {
+                        return prev;
+                    }
+
+                    const newHistory = [newItem, ...prev];
+
+                    // Queue the save operation to run sequentially
+                    // This prevents race conditions where parallel saves overwrite each other on the server
+                    historySaveQueue.current = historySaveQueue.current.then(async () => {
+                        try {
+                            await saveHistoryToServer(newHistory, settings.serverAddress);
+                        } catch (e) {
+                            console.error("Failed to save history to server", e);
                         }
-
-                        const newHistory = [newItem, ...prev];
-
-                        // Queue the save operation to run sequentially
-                        // This prevents race conditions where parallel saves overwrite each other on the server
-                        historySaveQueue.current = historySaveQueue.current.then(async () => {
-                            try {
-                                await saveHistoryToServer(newHistory, settings.serverAddress);
-                            } catch (e) {
-                                console.error("Failed to save history to server", e);
-                            }
-                        });
-
-                        return newHistory;
                     });
-                } else {
-                    console.log("[Incognito] Skipping history save");
-                }
+
+                    return newHistory;
+                });
 
             } else {
                 throw new Error("No output images found in history");
@@ -1784,19 +1727,6 @@ export default function App() {
         const hashed = await hashPin(pin);
         if (hashed === serverPinHash) {
             setIsLocked(false);
-            setSessionPin(pin);
-
-            // Initialize master key for encryption if in incognito mode
-            if (settings.incognito) {
-                try {
-                    const masterKey = await getOrCreateMasterKey(pin);
-                    setSessionMasterKey(masterKey);
-                    console.log("[Encryption] Master key initialized");
-                } catch (e) {
-                    console.error("[Encryption] Failed to initialize master key:", e);
-                }
-            }
-
             return true;
         }
         return false;
