@@ -31,7 +31,8 @@ const ResultCard: React.FC<ResultCardProps> = ({
 
     if (!images || images.length === 0) return null;
 
-    const isFirstItemVideo = images[0].match(/\.(mp4|webm|mov)($|\?|&)/i);
+    // Check if first item is a video - use forceVideo prop for encrypted blob URLs
+    const isFirstItemVideo = forceVideo || images[0].match(/\.(mp4|webm|mov)($|\?|&)/i);
 
     return (
         <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden animate-fade-in transition-colors duration-300">

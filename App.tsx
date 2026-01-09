@@ -825,8 +825,12 @@ export default function App() {
 
         const videoUrl = lastGeneratedImage[0];
 
-        // Check if it's actually a video
-        if (!videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i)) {
+        // Check if it's actually a video - use viewRef for blob URLs (encrypted videos)
+        // or URL extension for server URLs
+        const isVideoByUrl = videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i);
+        const isVideoByView = viewRef.current === 'video';
+
+        if (!isVideoByUrl && !isVideoByView) {
             setErrorMsg("Cannot extend non-video content.");
             return;
         }
@@ -1737,6 +1741,13 @@ export default function App() {
                         if (imgInfo.filename) {
                             console.log("Step 5: Marking temp file for deletion:", imgInfo.filename, "type:", imgInfo.type);
                             tempFilesToDelete.current.set(imgInfo.filename, imgInfo.type || 'temp');
+
+                            // Also mark the PNG thumbnail that WAN generates alongside video files
+                            if (imgInfo.filename.match(/\.(mp4|webm|mov)$/i)) {
+                                const thumbnailFilename = imgInfo.filename.replace(/\.(mp4|webm|mov)$/i, '.png');
+                                console.log("Step 5b: Also marking thumbnail for deletion:", thumbnailFilename);
+                                tempFilesToDelete.current.set(thumbnailFilename, imgInfo.type || 'temp');
+                            }
                         }
                         console.log(">>> INCOGNITO ENCRYPTION COMPLETE <<<");
 
