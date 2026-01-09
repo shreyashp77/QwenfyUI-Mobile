@@ -188,7 +188,7 @@ const AdvancedOptions: React.FC<AdvancedOptionsProps> = ({
                                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">NSFW Mode</span>
                                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gradient-to-r from-red-500 to-rose-600 text-white">18+</span>
                                         </div>
-                                        <span className="text-[10px] text-gray-500">Uncensored DSW V8 GGUF (No LoRA)</span>
+                                        <span className="text-[10px] text-gray-500">Uncensored Dasiwa V81 (No LoRA)</span>
                                     </div>
                                     <button
                                         onClick={() => setEnhancedVideoMode && setEnhancedVideoMode(!enhancedVideoMode)}

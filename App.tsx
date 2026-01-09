@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS } from './constants';
+import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, VIDEO_EXTEND_CONCAT_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS, VIDEO_MODELS_NSFW } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
 import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
 import ImageInput from './components/ImageInput';
@@ -118,6 +118,7 @@ export default function App() {
     const pendingSuccessIds = useRef<Set<string>>(new Set()); // Buffer for race-condition success messages
     const historySaveQueue = useRef<Promise<void>>(Promise.resolve()); // Sequential queue for history saves
     const tempFilesToDelete = useRef<Set<string>>(new Set()); // Track temp files for deferred cleanup
+    const extendVideoPathRef = useRef<string | null>(null); // Track original video path for concatenation in extend mode
 
 
     // Sync feedback services with settings
@@ -594,6 +595,10 @@ export default function App() {
             newImages[index] = null;
             return newImages;
         });
+        // Clear extend video path if user clears the image
+        if (index === 0) {
+            extendVideoPathRef.current = null;
+        }
     }, []);
 
     const randomizeSeed = () => setSeed(Math.floor(Math.random() * 1000000000000));
@@ -687,6 +692,19 @@ export default function App() {
             const lastFrameFile = await extractLastFrame();
             console.log("Extracted last frame from history:", lastFrameFile.name, lastFrameFile.size, "bytes");
 
+            // Upload the original video to the input folder so VHS_LoadVideo can access it
+            setStatusMessage("Uploading original video for merge...");
+            const videoResponse = await fetch(item.imageUrl);
+            if (!videoResponse.ok) throw new Error("Failed to fetch original video");
+            const videoBlob = await videoResponse.blob();
+            const videoFile = new File([videoBlob], `extend_source_${Date.now()}.mp4`, { type: 'video/mp4' });
+            const uploadedVideoFilename = await uploadImage(videoFile, settings.serverAddress, true, 'input');
+            console.log("Uploaded original video to input folder:", uploadedVideoFilename);
+
+            // Store the uploaded video filename for concatenation
+            extendVideoPathRef.current = uploadedVideoFilename;
+            // Also mark it for cleanup after generation
+            tempFilesToDelete.current.add(uploadedVideoFilename);
 
             // Free memory before loading new models
             await freeMemory(settings.serverAddress);
@@ -705,7 +723,7 @@ export default function App() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
             // Show toast to confirm
-            setToastMessage("Last frame extracted - configure and generate");
+            setToastMessage("Video ready - generate to extend and merge");
             setTimeout(() => setToastMessage(null), 3000);
             setStatusMessage("");
 
@@ -828,6 +846,19 @@ export default function App() {
             const lastFrameFile = await extractLastFrame();
             console.log("Extracted last frame:", lastFrameFile.name, lastFrameFile.size, "bytes");
 
+            // Upload the original video to input folder so VHS_LoadVideo can access it
+            setStatusMessage("Uploading original video for merge...");
+            const videoResponse = await fetch(videoUrl);
+            if (!videoResponse.ok) throw new Error("Failed to fetch original video");
+            const videoBlob = await videoResponse.blob();
+            const videoFile = new File([videoBlob], `extend_source_${Date.now()}.mp4`, { type: 'video/mp4' });
+            const uploadedVideoFilename = await uploadImage(videoFile, settings.serverAddress, true, 'input');
+            console.log("Uploaded original video to input folder:", uploadedVideoFilename);
+
+            // Store the uploaded video filename for concatenation
+            extendVideoPathRef.current = uploadedVideoFilename;
+            // Also mark it for cleanup after generation
+            tempFilesToDelete.current.add(uploadedVideoFilename);
 
             // Free memory before loading new models
             await freeMemory(settings.serverAddress);
@@ -843,7 +874,7 @@ export default function App() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
             // Show toast to confirm
-            setToastMessage("Last frame extracted - configure and generate");
+            setToastMessage("Video ready - generate to extend and merge");
             setTimeout(() => setToastMessage(null), 3000);
             setStatusMessage("");
 
@@ -1318,13 +1349,33 @@ export default function App() {
 
                 setStatus(GenerationStatus.QUEUED);
                 setStatusMessage("Queued...");
-                workflow = JSON.parse(JSON.stringify(VIDEO_WORKFLOW));
 
-                const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "52", "57", "58", "61", "62", "63", "64", "66", "67", "68"]);
-                if (missingNode) throw new Error(`Invalid Video Workflow: Missing node ${missingNode}.`);
+                // Use concat workflow if we're extending a video (extendVideoPathRef is set)
+                const isExtending = extendVideoPathRef.current !== null;
+                if (isExtending) {
+                    console.log("Using VIDEO_EXTEND_CONCAT_WORKFLOW for video extension with merge");
+                    workflow = JSON.parse(JSON.stringify(VIDEO_EXTEND_CONCAT_WORKFLOW));
 
-                // Inputs
-                workflow["52"].inputs.image = filename;
+                    const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "57", "58", "61", "62", "63", "64", "66", "67", "68", "89", "90", "91"]);
+                    if (missingNode) throw new Error(`Invalid Video Extend Concat Workflow: Missing node ${missingNode}.`);
+
+                    // Set the original video filename for loading and concatenation
+                    workflow["89"].inputs.video = extendVideoPathRef.current;
+                    console.log("Set video filename for concatenation:", extendVideoPathRef.current);
+
+                    // Clear the ref after using it
+                    extendVideoPathRef.current = null;
+                } else {
+                    workflow = JSON.parse(JSON.stringify(VIDEO_WORKFLOW));
+
+                    const missingNode = validateWorkflow(workflow, ["6", "7", "8", "38", "39", "50", "52", "57", "58", "61", "62", "63", "64", "66", "67", "68"]);
+                    if (missingNode) throw new Error(`Invalid Video Workflow: Missing node ${missingNode}.`);
+
+                    // For normal workflow, set the input image
+                    workflow["52"].inputs.image = filename;
+                }
+
+                // Set prompt (common for both workflows)
                 workflow["6"].inputs.text = currentPrompt;
 
                 // Handle Fast Mode (Swap Models)
@@ -1338,21 +1389,39 @@ export default function App() {
                     workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.STANDARD;
                 }
 
-                // Enhanced Mode (Easter Egg) - Overrides Fast/Standard
+                // NSFW Mode (Easter Egg) - Uses safetensors models instead of GGUF
                 if (settings.enableRemoteInput && enhancedVideoMode) {
-                    console.log("Using Enhanced Mode (DSW Models, No LoRA)");
+                    console.log("Using NSFW Mode (Dasiwa safetensors, No LoRA)");
 
-                    // 1. Set Models
-                    workflow["61"].inputs.unet_name = VIDEO_MODELS.HIGH_NOISE.ENHANCED;
-                    workflow["62"].inputs.unet_name = VIDEO_MODELS.LOW_NOISE.ENHANCED;
+                    // 1. Change loader nodes from UnetLoaderGGUF to UNETLoader and set safetensors models
+                    workflow["61"] = {
+                        inputs: {
+                            unet_name: VIDEO_MODELS_NSFW.HIGH_NOISE,
+                            weight_dtype: "default"
+                        },
+                        class_type: "UNETLoader",
+                        _meta: {
+                            title: "Load Diffusion Model"
+                        }
+                    };
+                    workflow["62"] = {
+                        inputs: {
+                            unet_name: VIDEO_MODELS_NSFW.LOW_NOISE,
+                            weight_dtype: "default"
+                        },
+                        class_type: "UNETLoader",
+                        _meta: {
+                            title: "Load Diffusion Model"
+                        }
+                    };
 
                     // 2. Bypass LoRA Nodes
                     // Standard High: Unet(61) -> LoRA(64) -> Sampling(67)
-                    // Enhanced High: Unet(61) -> Sampling(67)
+                    // NSFW High: Unet(61) -> Sampling(67)
                     workflow["67"].inputs.model = ["61", 0];
 
                     // Standard Low: Unet(62) -> LoRA(66) -> Sampling(68)
-                    // Enhanced Low: Unet(62) -> Sampling(68)
+                    // NSFW Low: Unet(62) -> Sampling(68)
                     workflow["68"].inputs.model = ["62", 0];
                 }
 

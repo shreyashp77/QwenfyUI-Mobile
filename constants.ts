@@ -41,13 +41,17 @@ export const VIDEO_MODELS = {
   HIGH_NOISE: {
     STANDARD: "wan2.2_i2v_high_noise_14B_Q5_K_M.gguf",
     FAST: "wan2.2_i2v_high_noise_14B_Q4_K_M.gguf",
-    ENHANCED: "DSW_WAN22_I2V_14B_V8_q4High.gguf"
   },
   LOW_NOISE: {
     STANDARD: "wan2.2_i2v_low_noise_14B_Q5_K_M.gguf",
     FAST: "wan2.2_i2v_low_noise_14B_Q4_K_M.gguf",
-    ENHANCED: "DSW_WAN22_I2V_14B_V8_q4Low.gguf"
   }
+};
+
+// NSFW mode uses safetensors models with UNETLoader instead of GGUF
+export const VIDEO_MODELS_NSFW = {
+  HIGH_NOISE: "Dasiwa_HighV81.safetensors",
+  LOW_NOISE: "Dasiwa_LowV81.safetensors"
 };
 
 export const BASE_WORKFLOW: ComfyWorkflow = {
@@ -983,10 +987,11 @@ export const VIDEO_EXTEND_WORKFLOW: ComfyWorkflow = {
       "title": "ModelSamplingSD3"
     }
   },
-  // VHS_LoadVideoPath - Load video from output folder using file path
+  // VHS_LoadVideo - Load video from ComfyUI (output folder)
+  // Uses video filename and type like LoadImage node
   "89": {
     "inputs": {
-      "video": "output/placeholder.mp4",
+      "video": "placeholder.mp4",
       "force_rate": 0,
       "force_size": "Disabled",
       "custom_width": 480,
@@ -995,9 +1000,9 @@ export const VIDEO_EXTEND_WORKFLOW: ComfyWorkflow = {
       "skip_first_frames": 0,
       "select_every_nth": 1
     },
-    "class_type": "VHS_LoadVideoPath",
+    "class_type": "VHS_LoadVideo",
     "_meta": {
-      "title": "Load Video Path 🎥🅥🅗🅢"
+      "title": "Load Video 🎥🅥🅗🅢"
     }
   },
   // ImageFromBatch - Extract the last frame from the video
@@ -1278,10 +1283,11 @@ export const VIDEO_EXTEND_CONCAT_WORKFLOW: ComfyWorkflow = {
       "title": "ModelSamplingSD3"
     }
   },
-  // VHS_LoadVideoPath - Load original video to get all frames
+  // VHS_LoadVideo - Load original video to get all frames
+  // Uses video filename like LoadImage node
   "89": {
     "inputs": {
-      "video": "output/placeholder.mp4",
+      "video": "placeholder.mp4",
       "force_rate": 16,
       "force_size": "Disabled",
       "custom_width": 480,
@@ -1290,7 +1296,7 @@ export const VIDEO_EXTEND_CONCAT_WORKFLOW: ComfyWorkflow = {
       "skip_first_frames": 0,
       "select_every_nth": 1
     },
-    "class_type": "VHS_LoadVideoPath",
+    "class_type": "VHS_LoadVideo",
     "_meta": {
       "title": "Load Original Video 🎥🅥🅗🅢"
     }
