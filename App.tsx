@@ -671,8 +671,11 @@ export default function App() {
     const handleHistoryExtendVideo = async (item: HistoryItem) => {
         const videoUrl = item.imageUrl;
 
-        // Check if it's actually a video
-        if (!videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i)) {
+        // Check if it's actually a video - use URL or filename (for encrypted .mp4.enc files)
+        const isVideoByUrl = videoUrl.match(/\.(mp4|webm|mov)($|\?|&)/i);
+        const isVideoByFilename = item.filename.match(/\.(mp4|webm|mov)(\.enc)?$/i);
+
+        if (!isVideoByUrl && !isVideoByFilename) {
             setErrorMsg("Cannot extend non-video content.");
             return;
         }

@@ -73,9 +73,26 @@ export class DeviceEncryption {
         finalBuffer.set(iv);
         finalBuffer.set(new Uint8Array(encryptedContent), iv.length);
 
-        // Create new File with .enc extension
+        // Create new File with .enc extension and timestamp for uniqueness
         const originalName = (file as File).name || 'encrypted_content';
-        const newName = originalName.endsWith('.enc') ? originalName : `${originalName}.enc`;
+        const timestamp = Date.now();
+
+        // Insert timestamp before .enc extension for unique filenames
+        // e.g., "wan22_00001.mp4" -> "wan22_00001_1736451234567.mp4.enc"
+        let newName: string;
+        if (originalName.endsWith('.enc')) {
+            newName = originalName;
+        } else {
+            // Insert timestamp before extension: filename_timestamp.ext.enc
+            const lastDotIndex = originalName.lastIndexOf('.');
+            if (lastDotIndex > 0) {
+                const baseName = originalName.substring(0, lastDotIndex);
+                const extension = originalName.substring(lastDotIndex);
+                newName = `${baseName}_${timestamp}${extension}.enc`;
+            } else {
+                newName = `${originalName}_${timestamp}.enc`;
+            }
+        }
 
         return new File([finalBuffer], newName, { type: 'application/octet-stream' });
     }
