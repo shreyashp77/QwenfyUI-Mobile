@@ -1107,7 +1107,7 @@ export default function App() {
         // Iterate Map
         for (const [filename, type] of tempFilesToDelete.current.entries()) {
             let deleted = false;
-            const maxRetries = 3;
+            const maxRetries = 10;
 
             for (let i = 0; i < maxRetries; i++) {
                 try {
@@ -1142,7 +1142,7 @@ export default function App() {
                 } catch (e) {
                     console.error(`Delete error for ${filename}:`, e);
                 }
-                if (i < maxRetries - 1) await delay(1000);
+                if (i < maxRetries - 1) await delay(2000);
             }
             if (!deleted) {
                 console.warn(`Failed to delete ${filename} (${type}) after retries.`);
