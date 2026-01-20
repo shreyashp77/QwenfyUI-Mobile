@@ -56,14 +56,16 @@ const Header: React.FC<HeaderProps> = ({
                 </h1>
                 <div
                     onClick={onLightningClick}
-                    className={`cursor-pointer ml-2 rounded-full transition-all duration-300 flex items-center justify-center ${incognito ? 'ring-2 ring-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)] bg-purple-500/10 p-1' : ''}`}
+                    className={`cursor-pointer ml-2 rounded-full transition-all duration-300 flex items-center justify-center p-1`}
                     title={incognito ? "Incognito Mode: ON" : "Connection Status"}
                 >
                     <Zap
-                        size={incognito ? 16 : 18}
+                        size={incognito ? 22 : 18}
                         fill="currentColor"
-                        className={`transition-all duration-500 ${isConnected ? `text-${theme}-500` : 'text-red-500'}`}
-                        style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
+                        stroke={incognito ? '#a855f7' : 'currentColor'}
+                        strokeWidth={incognito ? 2.5 : 2}
+                        className={`transition-all duration-500 ${isConnected ? `text-${theme}-500` : 'text-red-500'} ${incognito ? 'drop-shadow-[0_0_3px_rgba(168,85,247,0.8)]' : ''}`}
+                        style={isConnected && !incognito ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
                     />
                 </div>
             </div>

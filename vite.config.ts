@@ -392,6 +392,43 @@ export default defineConfig(({ mode }) => {
               next();
             }
           });
+
+          // POST delete ALL gallery files
+          server.middlewares.use('/api/gallery/delete-all', async (req, res, next) => {
+            if (req.method === 'POST') {
+              try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+
+                if (!fs.existsSync(galleryDir)) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, deletedCount: 0 }));
+                  return;
+                }
+
+                const files = fs.readdirSync(galleryDir);
+                let deletedCount = 0;
+
+                for (const file of files) {
+                  if (file !== '.gallery_config') {
+                    fs.unlinkSync(path.join(galleryDir, file));
+                    deletedCount++;
+                  }
+                }
+
+                console.log(`[Gallery] Deleted all files (${deletedCount} items)`);
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, deletedCount }));
+              } catch (error) {
+                console.error('[Gallery Delete All] Error:', error);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ success: false, error: String(error) }));
+              }
+            } else {
+              next();
+            }
+          });
         }
       }
     ],

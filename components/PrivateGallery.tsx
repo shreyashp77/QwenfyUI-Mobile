@@ -194,6 +194,27 @@ export default function PrivateGallery({
         }
     };
 
+    const handleDeleteAll = async () => {
+        if (!confirm('WARNING: Are you sure you want to delete ALL items from the gallery?\n\nThis action cannot be undone.')) return;
+
+        try {
+            const res = await fetch('/api/gallery/delete-all', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                // Revoke all URLs
+                decryptedItems.forEach(item => URL.revokeObjectURL(item.url));
+
+                // Clear state
+                setFiles([]);
+                setDecryptedItems(new Map());
+                setSelectedItem(null);
+            }
+        } catch (err: any) {
+            console.error('Failed to delete all:', err);
+            onError?.('Failed to delete all items');
+        }
+    };
+
     const formatDate = (timestamp: number) => {
         return new Date(timestamp).toLocaleString();
     };
@@ -209,12 +230,23 @@ export default function PrivateGallery({
                     <h2 className="text-lg font-semibold text-white">Private Gallery</h2>
                     <span className="text-white/70 text-sm">({files.length} items)</span>
                 </div>
-                <button
-                    onClick={onClose}
-                    className="p-2 rounded-full hover:bg-white/20 transition-colors"
-                >
-                    <X className="text-white" size={24} />
-                </button>
+                <div className="flex items-center gap-2">
+                    {files.length > 0 && (
+                        <button
+                            onClick={handleDeleteAll}
+                            className="p-2 rounded-full hover:bg-white/20 transition-colors text-white/90 hover:text-red-200"
+                            title="Delete All"
+                        >
+                            <Trash2 size={24} />
+                        </button>
+                    )}
+                    <button
+                        onClick={onClose}
+                        className="p-2 rounded-full hover:bg-white/20 transition-colors"
+                    >
+                        <X className="text-white" size={24} />
+                    </button>
+                </div>
             </div>
 
             {/* Content */}
