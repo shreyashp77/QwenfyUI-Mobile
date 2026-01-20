@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { HistoryItem, ThemeColor } from '../types';
-import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2, Monitor, Film } from 'lucide-react';
+import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2, Monitor, Film, Lock } from 'lucide-react';
 import CompareModal from './CompareModal';
 
 interface HistoryGalleryProps {
@@ -14,6 +14,8 @@ interface HistoryGalleryProps {
     nsfwMode: boolean;
     theme: ThemeColor;
     serverAddress: string;
+    enableEasterEgg?: boolean;
+    onSaveToGallery?: (imageUrl: string, filename: string) => void;
 }
 
 // Sub-component to handle individual image loading state
@@ -62,7 +64,7 @@ const HistoryThumbnail: React.FC<{
     );
 };
 
-const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSelectVideo, onExtendVideo, onClose, onDelete, nsfwMode, theme, serverAddress }) => {
+const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSelectVideo, onExtendVideo, onClose, onDelete, nsfwMode, theme, serverAddress, enableEasterEgg, onSaveToGallery }) => {
     const [previewIndex, setPreviewIndex] = useState<number | null>(null);
     const [previewRevealed, setPreviewRevealed] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -462,6 +464,17 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                 Extend Video <Film size={18} />
                                             </button>
                                         )}
+                                        {enableEasterEgg && onSaveToGallery && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSaveToGallery(history[previewIndex].imageUrl, history[previewIndex].filename);
+                                                }}
+                                                className={`flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                            >
+                                                Save <Lock size={18} />
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 w-full justify-center px-4">
@@ -483,6 +496,17 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                 className={`flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
                                             >
                                                 Use for Video <Monitor size={18} />
+                                            </button>
+                                        )}
+                                        {enableEasterEgg && onSaveToGallery && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onSaveToGallery(history[previewIndex].imageUrl, history[previewIndex].filename);
+                                                }}
+                                                className={`flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                            >
+                                                Save <Lock size={18} />
                                             </button>
                                         )}
                                     </div>

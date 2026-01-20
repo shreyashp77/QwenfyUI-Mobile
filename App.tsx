@@ -16,7 +16,10 @@ import ResultCard from './components/ResultCard';
 import PromptInput from './components/PromptInput';
 import AdvancedOptions, { ASPECT_RATIOS } from './components/AdvancedOptions';
 import GenerationBottomBar from './components/GenerationBottomBar';
-import PinOverlay from './components/PinOverlay'; // NEW
+import PinOverlay from './components/PinOverlay';
+import GalleryPasswordDialog from './components/GalleryPasswordDialog';
+import PrivateGallery from './components/PrivateGallery';
+import { hashPasswordWithSalt, verifyPassword, encryptWithPassword } from './utils/passwordCrypto';
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
@@ -48,6 +51,14 @@ export default function App() {
     // PIN State
     const [isLocked, setIsLocked] = useState(false);
     const [serverPinHash, setServerPinHash] = useState<string | null>(null);
+
+    // Gallery State (Easter Egg only)
+    const [showGallery, setShowGallery] = useState(false);
+    const [showGalleryPasswordDialog, setShowGalleryPasswordDialog] = useState(false);
+    const [galleryPasswordMode, setGalleryPasswordMode] = useState<'setup' | 'unlock'>('unlock');
+    const [galleryPassword, setGalleryPassword] = useState<string | null>(null); // In-memory password
+    const [galleryConfig, setGalleryConfig] = useState<{ hash: string; salt: string } | null>(null);
+    const [galleryError, setGalleryError] = useState<string | null>(null);
 
     // Model (always use default)
     const [selectedModel] = useState<string>(DEFAULT_MODEL);
@@ -1821,6 +1832,159 @@ export default function App() {
         setServerPinHash(pinHash || null);
     };
 
+    // ========== GALLERY HANDLERS ==========
+
+    // Load gallery config on mount (if Easter Egg enabled)
+    useEffect(() => {
+        if (settings.enableRemoteInput) {
+            loadGalleryConfig();
+        }
+    }, [settings.enableRemoteInput]);
+
+    const loadGalleryConfig = async () => {
+        try {
+            const res = await fetch('/api/gallery/config');
+            const data = await res.json();
+            if (data.success && data.config) {
+                setGalleryConfig(data.config);
+            } else {
+                setGalleryConfig(null);
+            }
+        } catch (e) {
+            console.error('Failed to load gallery config:', e);
+        }
+    };
+
+    const handleOpenGallery = () => {
+        if (galleryPassword) {
+            // Already unlocked
+            setShowGallery(true);
+        } else if (galleryConfig) {
+            // Password exists, need to unlock
+            setGalleryPasswordMode('unlock');
+            setShowGalleryPasswordDialog(true);
+        } else {
+            // No password set, need to create one
+            setGalleryPasswordMode('setup');
+            setShowGalleryPasswordDialog(true);
+        }
+    };
+
+    const handleGalleryPasswordSubmit = async (password: string): Promise<boolean> => {
+        setGalleryError(null);
+
+        if (galleryPasswordMode === 'setup') {
+            // Create new password
+            try {
+                const { hash, salt } = await hashPasswordWithSalt(password);
+                const res = await fetch('/api/gallery/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hash, salt })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setGalleryConfig({ hash, salt });
+                    setGalleryPassword(password);
+                    setShowGalleryPasswordDialog(false);
+                    setShowGallery(true);
+                    setToastMessage('Gallery password set! 🔐');
+                    setTimeout(() => setToastMessage(null), 3000);
+                    return true;
+                }
+            } catch (e) {
+                console.error('Failed to save gallery password:', e);
+                setGalleryError('Failed to save password');
+            }
+            return false;
+        } else {
+            // Verify existing password
+            if (!galleryConfig) return false;
+            const isValid = await verifyPassword(password, galleryConfig.hash, galleryConfig.salt);
+            if (isValid) {
+                setGalleryPassword(password);
+                setShowGalleryPasswordDialog(false);
+                setShowGallery(true);
+                return true;
+            } else {
+                setGalleryError('Incorrect password');
+                return false;
+            }
+        }
+    };
+
+    const handleSaveToGallery = async (imageUrl: string, filename: string) => {
+        // Ensure we have a gallery password
+        if (!galleryPassword) {
+            // Need to unlock gallery first
+            if (galleryConfig) {
+                setGalleryPasswordMode('unlock');
+            } else {
+                setGalleryPasswordMode('setup');
+            }
+            setShowGalleryPasswordDialog(true);
+            setErrorMsg('Please unlock the gallery first to save items');
+            return;
+        }
+
+        try {
+            // Fetch the file
+            const res = await fetch(imageUrl);
+            if (!res.ok) throw new Error('Failed to fetch file');
+            const blob = await res.blob();
+
+            // Create a File object
+            // Ensure filename has proper extension based on MIME type
+            let finalFilename = filename;
+            const hasExtension = /\.(png|jpg|jpeg|gif|webp|mp4|webm|mov)$/i.test(filename);
+
+            if (!hasExtension && blob.type) {
+                // Add extension based on MIME type
+                const mimeToExt: Record<string, string> = {
+                    'image/png': '.png',
+                    'image/jpeg': '.jpg',
+                    'image/gif': '.gif',
+                    'image/webp': '.webp',
+                    'video/mp4': '.mp4',
+                    'video/webm': '.webm',
+                    'video/quicktime': '.mov'
+                };
+                const ext = mimeToExt[blob.type] || '';
+                finalFilename = filename.replace(/\.[^.]*$/, '') + ext;
+                console.log('[Gallery Save] Added extension from MIME type:', blob.type, '->', finalFilename);
+            }
+
+            // Create a File object
+            const file = new File([blob], finalFilename, { type: blob.type });
+
+            // Encrypt with gallery password
+            const encryptedFile = await encryptWithPassword(file, galleryPassword);
+
+            // Upload to gallery
+            const uploadRes = await fetch('/api/gallery/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-Filename': encryptedFile.name
+                },
+                body: await encryptedFile.arrayBuffer()
+            });
+            const uploadData = await uploadRes.json();
+
+            if (uploadData.success) {
+                setToastMessage('Saved to Gallery! 🔒');
+                setTimeout(() => setToastMessage(null), 3000);
+                if (haptic.isSupported()) haptic.trigger('medium');
+                else sound.play('success');
+            } else {
+                throw new Error(uploadData.error || 'Upload failed');
+            }
+        } catch (e: any) {
+            console.error('Failed to save to gallery:', e);
+            setErrorMsg(`Failed to save: ${e.message}`);
+        }
+    };
+
     return (
         <div className={`max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 relative shadow-2xl overflow-x-hidden ${lastGeneratedImage && !showResultPreview ? 'pb-96' : 'pb-24'} transition-colors duration-300`}>
             {/* Security Overlay */}
@@ -1860,6 +2024,9 @@ export default function App() {
                 onToggleHistory={handleToggleHistory}
                 onToggleSettings={() => setShowSettings(!showSettings)}
                 onLightningClick={handleLightningClick}
+                enableEasterEgg={settings.enableRemoteInput}
+                showGallery={showGallery}
+                onToggleGallery={handleOpenGallery}
             />
 
             {/* Settings Modal */}
@@ -1985,6 +2152,8 @@ export default function App() {
                                 onClear={handleClearResult}
                                 onImageClick={() => setShowResultPreview(true)}
                                 forceVideo={view === 'video'}
+                                enableEasterEgg={settings.enableRemoteInput}
+                                onSaveToGallery={handleSaveToGallery}
                             />
                         )}
 
@@ -2083,6 +2252,8 @@ export default function App() {
                         nsfwMode={settings.nsfwMode}
                         theme={settings.theme}
                         serverAddress={settings.serverAddress}
+                        enableEasterEgg={settings.enableRemoteInput}
+                        onSaveToGallery={handleSaveToGallery}
                     />
                 )
             }
@@ -2100,6 +2271,29 @@ export default function App() {
                     />
                 )
             }
+
+            {/* Gallery Password Dialog (Easter Egg only) */}
+            {settings.enableRemoteInput && showGalleryPasswordDialog && (
+                <GalleryPasswordDialog
+                    isOpen={showGalleryPasswordDialog}
+                    mode={galleryPasswordMode}
+                    onClose={() => setShowGalleryPasswordDialog(false)}
+                    onSubmit={handleGalleryPasswordSubmit}
+                    error={galleryError}
+                    theme={settings.theme}
+                />
+            )}
+
+            {/* Private Gallery (Easter Egg only) */}
+            {settings.enableRemoteInput && showGallery && galleryPassword && (
+                <PrivateGallery
+                    isOpen={showGallery}
+                    onClose={() => setShowGallery(false)}
+                    password={galleryPassword}
+                    theme={settings.theme}
+                    onError={(msg) => setErrorMsg(msg)}
+                />
+            )}
 
         </div >
     );

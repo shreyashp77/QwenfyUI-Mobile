@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, History as HistoryIcon, Zap, Moon, Sun, ArrowLeft } from 'lucide-react';
+import { Settings, History as HistoryIcon, Zap, Moon, Sun, ArrowLeft, Lock } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 type ViewMode = 'home' | 'edit' | 'generate' | 'video';
@@ -13,9 +13,12 @@ interface HeaderProps {
     showHistory: boolean;
 
     incognito?: boolean;
+    enableEasterEgg?: boolean;
+    showGallery?: boolean;
     onBack: () => void;
     onToggleThemeMode: () => void;
     onToggleHistory: () => void;
+    onToggleGallery?: () => void;
     onToggleSettings: () => void;
     onLightningClick: () => void;
 }
@@ -32,7 +35,10 @@ const Header: React.FC<HeaderProps> = ({
     onToggleHistory,
     onToggleSettings,
     onLightningClick,
-    incognito
+    incognito,
+    enableEasterEgg,
+    showGallery,
+    onToggleGallery
 }) => {
     return (
         <header className={`p-4 bg-white dark:bg-gray-900 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40 transition-colors duration-300`}>
@@ -79,6 +85,15 @@ const Header: React.FC<HeaderProps> = ({
                         className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showHistory ? `text-${theme}-600 dark:text-${theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
                     >
                         <HistoryIcon size={20} />
+                    </button>
+                )}
+                {view !== 'home' && enableEasterEgg && onToggleGallery && (
+                    <button
+                        onClick={onToggleGallery}
+                        className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showGallery ? `text-${theme}-600 dark:text-${theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
+                        title="Private Gallery"
+                    >
+                        <Lock size={20} />
                     </button>
                 )}
                 <button

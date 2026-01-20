@@ -153,6 +153,245 @@ export default defineConfig(({ mode }) => {
               next();
             }
           });
+
+          // ========== GALLERY API ENDPOINTS ==========
+
+          // GET/POST gallery config (password hash + salt)
+          server.middlewares.use('/api/gallery/config', async (req, res, next) => {
+            const fs = await import('fs');
+            const path = await import('path');
+            const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+            const configPath = path.join(galleryDir, '.gallery_config');
+
+            // Ensure gallery directory exists
+            if (!fs.existsSync(galleryDir)) {
+              fs.mkdirSync(galleryDir, { recursive: true });
+              console.log(`[Gallery] Created directory: ${galleryDir}`);
+            }
+
+            if (req.method === 'GET') {
+              try {
+                if (fs.existsSync(configPath)) {
+                  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, config }));
+                } else {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, config: null }));
+                }
+              } catch (error) {
+                console.error('[Gallery Config] Error reading config:', error);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ success: false, error: String(error) }));
+              }
+            } else if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk.toString(); });
+              req.on('end', async () => {
+                try {
+                  const { hash, salt } = JSON.parse(body);
+                  if (!hash || !salt) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Hash and salt required' }));
+                    return;
+                  }
+                  const config = { version: 1, hash, salt };
+                  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+                  console.log(`[Gallery] Saved config to: ${configPath}`);
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true }));
+                } catch (error) {
+                  console.error('[Gallery Config] Error saving config:', error);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ success: false, error: String(error) }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
+
+          // POST save file to gallery
+          server.middlewares.use('/api/gallery/save', async (req, res, next) => {
+            if (req.method === 'POST') {
+              const chunks: Buffer[] = [];
+              req.on('data', chunk => { chunks.push(chunk); });
+              req.on('end', async () => {
+                try {
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+
+                  // Ensure gallery directory exists
+                  if (!fs.existsSync(galleryDir)) {
+                    fs.mkdirSync(galleryDir, { recursive: true });
+                  }
+
+                  // Parse multipart form data (simple implementation)
+                  const buffer = Buffer.concat(chunks);
+                  const contentType = req.headers['content-type'] || '';
+
+                  if (contentType.includes('application/octet-stream')) {
+                    // Simple binary upload with filename in header
+                    const filename = req.headers['x-filename'] as string || `gallery_${Date.now()}.psave`;
+                    const filePath = path.join(galleryDir, filename);
+
+                    // Security check
+                    if (!filePath.startsWith(galleryDir)) {
+                      res.statusCode = 403;
+                      res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
+                      return;
+                    }
+
+                    fs.writeFileSync(filePath, buffer);
+                    console.log(`[Gallery] Saved file: ${filePath}`);
+                    res.statusCode = 200;
+                    res.end(JSON.stringify({ success: true, filename }));
+                  } else {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Expected application/octet-stream' }));
+                  }
+                } catch (error) {
+                  console.error('[Gallery Save] Error:', error);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ success: false, error: String(error) }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
+
+          // GET list gallery files
+          server.middlewares.use('/api/gallery/list', async (req, res, next) => {
+            if (req.method === 'GET') {
+              try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+
+                if (!fs.existsSync(galleryDir)) {
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, files: [] }));
+                  return;
+                }
+
+                const allFiles = fs.readdirSync(galleryDir);
+                // Only return .psave files, exclude config
+                const files = allFiles
+                  .filter(f => f.endsWith('.psave'))
+                  .map(f => {
+                    const stat = fs.statSync(path.join(galleryDir, f));
+                    return {
+                      filename: f,
+                      size: stat.size,
+                      mtime: stat.mtime.getTime()
+                    };
+                  })
+                  .sort((a, b) => b.mtime - a.mtime); // Most recent first
+
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, files }));
+              } catch (error) {
+                console.error('[Gallery List] Error:', error);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ success: false, error: String(error) }));
+              }
+            } else {
+              next();
+            }
+          });
+
+          // GET gallery file content
+          server.middlewares.use('/api/gallery/file', async (req, res, next) => {
+            if (req.method === 'GET') {
+              try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const url = await import('url');
+
+                const parsedUrl = url.parse(req.url || '', true);
+                const filename = parsedUrl.query.filename as string;
+
+                if (!filename) {
+                  res.statusCode = 400;
+                  res.end(JSON.stringify({ success: false, error: 'Filename required' }));
+                  return;
+                }
+
+                const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+                const filePath = path.join(galleryDir, filename);
+
+                // Security check
+                if (!filePath.startsWith(galleryDir)) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
+                  return;
+                }
+
+                if (!fs.existsSync(filePath)) {
+                  res.statusCode = 404;
+                  res.end(JSON.stringify({ success: false, error: 'File not found' }));
+                  return;
+                }
+
+                const fileBuffer = fs.readFileSync(filePath);
+                res.setHeader('Content-Type', 'application/octet-stream');
+                res.setHeader('Content-Length', fileBuffer.length);
+                res.statusCode = 200;
+                res.end(fileBuffer);
+              } catch (error) {
+                console.error('[Gallery File] Error:', error);
+                res.statusCode = 500;
+                res.end(JSON.stringify({ success: false, error: String(error) }));
+              }
+            } else {
+              next();
+            }
+          });
+
+          // POST delete gallery file
+          server.middlewares.use('/api/gallery/delete', async (req, res, next) => {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk.toString(); });
+              req.on('end', async () => {
+                try {
+                  const { filename } = JSON.parse(body);
+                  if (!filename) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Filename required' }));
+                    return;
+                  }
+
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+                  const filePath = path.join(galleryDir, filename);
+
+                  // Security check
+                  if (!filePath.startsWith(galleryDir)) {
+                    res.statusCode = 403;
+                    res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
+                    return;
+                  }
+
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[Gallery] Deleted file: ${filePath}`);
+                  }
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true }));
+                } catch (error) {
+                  console.error('[Gallery Delete] Error:', error);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ success: false, error: String(error) }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
         }
       }
     ],

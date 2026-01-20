@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown, Film } from 'lucide-react';
+import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown, Film, Lock } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ResultCardProps {
@@ -13,6 +13,8 @@ interface ResultCardProps {
     onClear: () => void;
     onImageClick: () => void;
     forceVideo?: boolean;
+    enableEasterEgg?: boolean;
+    onSaveToGallery?: (imageUrl: string, filename: string) => void;
 }
 
 const ResultCard: React.FC<ResultCardProps> = ({
@@ -25,7 +27,9 @@ const ResultCard: React.FC<ResultCardProps> = ({
     onExtendVideo,
     // onClear,
     onImageClick,
-    forceVideo
+    forceVideo,
+    enableEasterEgg,
+    onSaveToGallery
 }) => {
     const [isMinimized, setIsMinimized] = React.useState(false);
 
@@ -80,6 +84,21 @@ const ResultCard: React.FC<ResultCardProps> = ({
                     >
                         <ExternalLink size={14} />
                     </button>
+                    {enableEasterEgg && onSaveToGallery && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                // Extract filename from URL or generate one
+                                const urlPath = images[0].split('?')[0];
+                                const filename = urlPath.split('/').pop() || `generation_${Date.now()}.png`;
+                                onSaveToGallery(images[0], filename);
+                            }}
+                            className={`text-${theme}-500 dark:text-${theme}-400 hover:text-${theme}-700 dark:hover:text-${theme}-300 p-1`}
+                            title="Save to Private Gallery"
+                        >
+                            <Lock size={14} />
+                        </button>
+                    )}
                     <button
                         className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-1"
                         title={isMinimized ? "Maximize Result" : "Minimize Result"}
