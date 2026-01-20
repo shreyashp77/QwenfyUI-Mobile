@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown, Film, Lock } from 'lucide-react';
+import { Check, Clock, PenTool, Monitor, ExternalLink, ChevronDown, Film, FolderLock } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 interface ResultCardProps {
@@ -96,7 +96,7 @@ const ResultCard: React.FC<ResultCardProps> = ({
                             className={`text-${theme}-500 dark:text-${theme}-400 hover:text-${theme}-700 dark:hover:text-${theme}-300 p-1`}
                             title="Save to Private Gallery"
                         >
-                            <Lock size={14} />
+                            <FolderLock size={14} />
                         </button>
                     )}
                     <button

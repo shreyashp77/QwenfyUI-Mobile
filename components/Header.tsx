@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, History as HistoryIcon, Zap, Moon, Sun, ArrowLeft, Lock } from 'lucide-react';
+import { Settings, History as HistoryIcon, Zap, Moon, Sun, ArrowLeft, FolderLock } from 'lucide-react';
 import { ThemeColor } from '../types';
 
 type ViewMode = 'home' | 'edit' | 'generate' | 'video';
@@ -88,7 +88,7 @@ const Header: React.FC<HeaderProps> = ({
                         className={`p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${showGallery ? `text-${theme}-600 dark:text-${theme}-400` : 'text-gray-600 dark:text-gray-400'}`}
                         title="Private Gallery"
                     >
-                        <Lock size={20} />
+                        <FolderLock size={20} />
                     </button>
                 )}
                 <button

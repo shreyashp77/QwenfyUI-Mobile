@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { HistoryItem, ThemeColor } from '../types';
-import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2, Monitor, Film, Lock } from 'lucide-react';
+import { X, ArrowUpRight, ExternalLink, EyeOff, ChevronLeft, ChevronRight, Copy, Check, Clock, FileWarning, ImageOff, SplitSquareHorizontal, Trash2, Monitor, Film, FolderLock } from 'lucide-react';
 import CompareModal from './CompareModal';
 
 interface HistoryGalleryProps {
@@ -472,7 +472,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                 }}
                                                 className={`pointer-events-auto flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Save <Lock size={16} />
+                                                Save <FolderLock size={16} />
                                             </button>
                                         )}
                                     </div>
@@ -506,7 +506,7 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                 }}
                                                 className={`pointer-events-auto flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Save <Lock size={16} />
+                                                Save <FolderLock size={16} />
                                             </button>
                                         )}
                                     </div>
