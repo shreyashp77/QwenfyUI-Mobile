@@ -54,23 +54,18 @@ const Header: React.FC<HeaderProps> = ({
                 <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-700 to-gray-900 dark:from-gray-100 dark:to-gray-400">
                     QwenfyUI
                 </h1>
-                <div onClick={onLightningClick} className="cursor-pointer ml-2">
+                <div
+                    onClick={onLightningClick}
+                    className={`cursor-pointer ml-2 rounded-full transition-all duration-300 flex items-center justify-center ${incognito ? 'ring-2 ring-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)] bg-purple-500/10 p-1' : ''}`}
+                    title={incognito ? "Incognito Mode: ON" : "Connection Status"}
+                >
                     <Zap
-                        size={18}
+                        size={incognito ? 16 : 18}
                         fill="currentColor"
                         className={`transition-all duration-500 ${isConnected ? `text-${theme}-500` : 'text-red-500'}`}
                         style={isConnected ? { filter: `drop-shadow(0 0 3px currentColor)` } : {}}
                     />
                 </div>
-                {incognito && (
-                    <div className="ml-2 flex items-center justify-center bg-purple-500/10 dark:bg-purple-400/10 border border-purple-500/20 rounded-full px-2 py-0.5 backdrop-blur-sm">
-                        <span className="relative flex h-2 w-2 mr-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-                        </span>
-                        <span className="text-[10px] font-medium tracking-wide text-purple-600 dark:text-purple-300">PRIVATE</span>
-                    </div>
-                )}
             </div>
             <div className="flex gap-2">
                 <button

@@ -1421,6 +1421,15 @@ export default function App() {
                 setStatus(GenerationStatus.QUEUED);
                 setStatusMessage("Queued...");
 
+                // Detect if input is video and force extend mode
+                // This ensures we use the correct workflow even if the UI toggle state is out of sync
+                const inputIsVideo = (images[0]?.type === 'file' && images[0].file?.type.startsWith('video/')) ||
+                    (images[0]?.type === 'server' && /\.(mp4|webm|mov|mkv)$/i.test(images[0]?.filename || ''));
+
+                if (extendVideo || inputIsVideo) {
+                    extendVideoPathRef.current = filename;
+                }
+
                 // Use concat workflow if we're extending a video (extendVideoPathRef is set)
                 const isExtending = extendVideoPathRef.current !== null;
                 if (isExtending) {
@@ -1985,6 +1994,73 @@ export default function App() {
         }
     };
 
+    const handleGallerySelect = async (item: { imageUrl: string, filename: string, type: 'image' | 'video' }, mode: 'edit' | 'video') => {
+        try {
+            // Fetch blob from URL to create a File object
+            const res = await fetch(item.imageUrl);
+            const blob = await res.blob();
+            // Remove .psave extension if present to ensure correct file handling
+            const filename = item.filename.replace(/\.psave$/i, '');
+            const file = new File([blob], filename, { type: blob.type });
+
+            const fileItem: InputImage = {
+                type: 'file',
+                file: file,
+                previewUrl: item.imageUrl,
+                isTemporary: true
+            };
+
+            setImages([fileItem]);
+
+            if (mode === 'video') {
+                setView('video');
+                // If it's an image, ensure extendVideo is false (normal img2vid)
+                if (item.type === 'image') {
+                    setExtendVideo(false);
+                }
+            } else {
+                setView('generate');
+            }
+
+            setShowGallery(false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        } catch (e) {
+            console.error("Failed to load gallery item", e);
+            setToastMessage("Failed to load item");
+        }
+    };
+
+    const handleGalleryExtendVideo = async (item: { imageUrl: string, filename: string, type: 'image' | 'video' }) => {
+        if (item.type !== 'video') return;
+
+        try {
+            const res = await fetch(item.imageUrl);
+            const blob = await res.blob();
+            // Remove .psave extension if present
+            const filename = item.filename.replace(/\.psave$/i, '');
+            const file = new File([blob], filename, { type: blob.type });
+
+            const fileItem: InputImage = {
+                type: 'file',
+                file: file,
+                previewUrl: item.imageUrl,
+                isTemporary: true
+            };
+
+            setImages([fileItem]);
+            setView('video');
+
+            setVideoResolution('auto'); // Default for extension
+            setShowGallery(false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        } catch (e) {
+            console.error("Failed to extend video", e);
+            setToastMessage("Failed to load video");
+        }
+    };
+
     return (
         <div className={`max-w-md mx-auto min-h-screen bg-gray-50 dark:bg-gray-950 relative shadow-2xl overflow-x-hidden ${lastGeneratedImage && !showResultPreview ? 'pb-96' : 'pb-24'} transition-colors duration-300`}>
             {/* Security Overlay */}
@@ -2292,6 +2368,9 @@ export default function App() {
                     password={galleryPassword}
                     theme={settings.theme}
                     onError={(msg) => setErrorMsg(msg)}
+                    onSelect={(item) => handleGallerySelect(item, 'edit')}
+                    onSelectVideo={(item) => handleGallerySelect(item, 'video')}
+                    onExtendVideo={handleGalleryExtendVideo}
                 />
             )}
 

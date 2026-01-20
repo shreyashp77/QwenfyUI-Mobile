@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Trash2, Lock, Image as ImageIcon, Film } from 'lucide-react';
+import { X, Trash2, Lock, Image as ImageIcon, Film, ArrowUpRight, Monitor } from 'lucide-react';
 import { decryptWithPassword, getOriginalExtension, getMimeType } from '../utils/passwordCrypto';
 
 interface GalleryFile {
@@ -21,6 +21,9 @@ interface PrivateGalleryProps {
     password: string;
     theme?: string;
     onError?: (message: string) => void;
+    onSelect?: (item: { imageUrl: string; filename: string; type: 'image' | 'video' }) => void;
+    onSelectVideo?: (item: { imageUrl: string; filename: string; type: 'image' | 'video' }) => void;
+    onExtendVideo?: (item: { imageUrl: string; filename: string; type: 'image' | 'video' }) => void;
 }
 
 export default function PrivateGallery({
@@ -28,7 +31,10 @@ export default function PrivateGallery({
     onClose,
     password,
     theme = 'indigo',
-    onError
+    onError,
+    onSelect,
+    onSelectVideo,
+    onExtendVideo
 }: PrivateGalleryProps) {
     const [files, setFiles] = useState<GalleryFile[]>([]);
     const [decryptedItems, setDecryptedItems] = useState<Map<string, DecryptedItem>>(new Map());
@@ -326,6 +332,54 @@ export default function PrivateGallery({
                             onClick={(e) => e.stopPropagation()}
                         />
                     )}
+
+                    {/* Action Buttons */}
+                    <div className="absolute bottom-8 left-0 w-full flex flex-wrap gap-2 justify-center px-4 pointer-events-none">
+                        {selectedItem.type === 'video' ? (
+                            onExtendVideo && (
+                                <button
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        await onExtendVideo({ imageUrl: selectedItem.url, filename: selectedItem.filename, type: 'video' });
+                                        setSelectedItem(null);
+                                        onClose();
+                                    }}
+                                    className={`pointer-events-auto flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
+                                >
+                                    Extend Video <Film size={16} />
+                                </button>
+                            )
+                        ) : (
+                            <>
+                                {onSelect && (
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            await onSelect({ imageUrl: selectedItem.url, filename: selectedItem.filename, type: 'image' });
+                                            setSelectedItem(null);
+                                            onClose();
+                                        }}
+                                        className={`pointer-events-auto flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
+                                    >
+                                        Use as Input <ArrowUpRight size={16} />
+                                    </button>
+                                )}
+                                {onSelectVideo && (
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            await onSelectVideo({ imageUrl: selectedItem.url, filename: selectedItem.filename, type: 'image' });
+                                            setSelectedItem(null);
+                                            onClose();
+                                        }}
+                                        className={`pointer-events-auto flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
+                                    >
+                                        Use for Video <Monitor size={16} />
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

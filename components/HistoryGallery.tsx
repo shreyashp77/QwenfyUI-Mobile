@@ -443,15 +443,15 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                 )}
 
                                 {history[previewIndex].filename.match(/\.(mp4|webm|mov)(\.enc)?$/i) ? (
-                                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 w-full justify-center px-4">
+                                    <div className="absolute bottom-8 left-0 w-full flex flex-wrap gap-2 justify-center px-4 pointer-events-none">
                                         <a
                                             href={history[previewIndex].imageUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             onClick={(e) => e.stopPropagation()}
-                                            className={`flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                            className={`pointer-events-auto flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                         >
-                                            Open in New Tab <ExternalLink size={18} />
+                                            Open in New Tab <ExternalLink size={16} />
                                         </a>
                                         {onExtendVideo && (
                                             <button
@@ -459,9 +459,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                     e.stopPropagation();
                                                     onExtendVideo(history[previewIndex]);
                                                 }}
-                                                className={`flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                                className={`pointer-events-auto flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Extend Video <Film size={18} />
+                                                Extend Video <Film size={16} />
                                             </button>
                                         )}
                                         {enableEasterEgg && onSaveToGallery && (
@@ -470,22 +470,22 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                     e.stopPropagation();
                                                     onSaveToGallery(history[previewIndex].imageUrl, history[previewIndex].filename);
                                                 }}
-                                                className={`flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                                className={`pointer-events-auto flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Save <Lock size={18} />
+                                                Save <Lock size={16} />
                                             </button>
                                         )}
                                     </div>
                                 ) : (
-                                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 w-full justify-center px-4">
+                                    <div className="absolute bottom-8 left-0 w-full flex flex-wrap gap-2 justify-center px-4 pointer-events-none">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onSelect(history[previewIndex]);
                                             }}
-                                            className={`flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                            className={`pointer-events-auto flex items-center gap-2 bg-${theme}-600/90 hover:bg-${theme}-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                         >
-                                            Use as Input <ArrowUpRight size={18} />
+                                            Use as Input <ArrowUpRight size={16} />
                                         </button>
                                         {onSelectVideo && (
                                             <button
@@ -493,9 +493,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                     e.stopPropagation();
                                                     onSelectVideo(history[previewIndex]);
                                                 }}
-                                                className={`flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                                className={`pointer-events-auto flex items-center gap-2 bg-white/90 hover:bg-white text-gray-900 px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Use for Video <Monitor size={18} />
+                                                Use for Video <Monitor size={16} />
                                             </button>
                                         )}
                                         {enableEasterEgg && onSaveToGallery && (
@@ -504,9 +504,9 @@ const HistoryGallery: React.FC<HistoryGalleryProps> = ({ history, onSelect, onSe
                                                     e.stopPropagation();
                                                     onSaveToGallery(history[previewIndex].imageUrl, history[previewIndex].filename);
                                                 }}
-                                                className={`flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105`}
+                                                className={`pointer-events-auto flex items-center gap-2 bg-gray-600/90 hover:bg-gray-500 text-white px-5 py-2.5 text-sm rounded-full font-semibold shadow-lg backdrop-blur-sm transition-all transform hover:scale-105 whitespace-nowrap`}
                                             >
-                                                Save <Lock size={18} />
+                                                Save <Lock size={16} />
                                             </button>
                                         )}
                                     </div>
