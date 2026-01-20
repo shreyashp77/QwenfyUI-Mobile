@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { BASE_WORKFLOW, GENERATE_WORKFLOW, VIDEO_WORKFLOW, VIDEO_EXTEND_CONCAT_WORKFLOW, STYLES, VIDEO_RESOLUTIONS, VIDEO_MODELS, VIDEO_MODELS_NSFW } from './constants';
 import { HistoryItem, GenerationStatus, InputImage, LoraSelection, ViewMode } from './types';
-import { uploadImage, queuePrompt, checkServerConnection, getAvailableNunchakuModels, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
+import { uploadImage, queuePrompt, checkServerConnection, getHistory, getAvailableLoras, getServerInputImages, interruptGeneration, loadHistoryFromServer, saveHistoryToServer, clearServerHistory, freeMemory, loadPinHash } from './services/comfyService';
 import ImageInput from './components/ImageInput';
 import HistoryGallery from './components/HistoryGallery';
 import ServerImageSelector from './components/ServerImageSelector';
@@ -12,7 +12,7 @@ import Header from './components/Header';
 import SettingsPanel from './components/SettingsPanel';
 import HomeScreen from './components/HomeScreen';
 import ResultCard from './components/ResultCard';
-import ModelSelector from './components/ModelSelector';
+
 import PromptInput from './components/PromptInput';
 import AdvancedOptions, { ASPECT_RATIOS } from './components/AdvancedOptions';
 import GenerationBottomBar from './components/GenerationBottomBar';
@@ -23,7 +23,6 @@ import { generateClientId } from './utils/idUtils';
 import { hashPin } from './utils/cryptoUtils';
 import { stripImageMetadata } from './utils/imageUtils'; // NEW
 import { DeviceEncryption } from './utils/cryptoUtils'; // NEW
-import { PREVIEW_IMAGE_NODE } from './constants'; // NEW
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -36,6 +35,7 @@ export default function App() {
     // --- State ---
     const [view, setView] = useState<ViewMode>('home');
     const viewRef = useRef<ViewMode>('home'); // Ref to track view for stale closures
+    const incognitoRef = useRef<boolean>(false); // Ref to track incognito for stale closures
 
     // Extracted Settings Logic
     const { settings, setSettings } = useAppSettings();
@@ -49,9 +49,8 @@ export default function App() {
     const [isLocked, setIsLocked] = useState(false);
     const [serverPinHash, setServerPinHash] = useState<string | null>(null);
 
-    // Model
-    const [availableModels, setAvailableModels] = useState<string[]>([DEFAULT_MODEL]);
-    const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+    // Model (always use default)
+    const [selectedModel] = useState<string>(DEFAULT_MODEL);
 
     // Inputs
     const [prompt, setPrompt] = useState<string>("");
@@ -144,6 +143,11 @@ export default function App() {
     useEffect(() => {
         viewRef.current = view;
     }, [view]);
+
+    // Sync incognito ref
+    useEffect(() => {
+        incognitoRef.current = settings.incognito;
+    }, [settings.incognito]);
 
     // Color manipulation and ID generation logic moved to utils/
     // Persistence and Theme Effects moved to useAppSettings hook
@@ -243,17 +247,6 @@ export default function App() {
     }, [status, settings.serverAddress]);
 
     const fetchModels = async () => {
-        // Fetch Models
-        const models = await getAvailableNunchakuModels(settings.serverAddress);
-        if (models && models.length > 0) {
-            setAvailableModels(models);
-            setSelectedModel(prev => {
-                if (models.includes(prev)) return prev;
-                if (models.includes(DEFAULT_MODEL)) return DEFAULT_MODEL;
-                return models[0];
-            });
-        }
-
         // Fetch LoRAs
         const loras = await getAvailableLoras(settings.serverAddress);
         if (loras && loras.length > 0) {
@@ -1295,19 +1288,8 @@ export default function App() {
                 setStatusMessage("Queued...");
                 workflow = JSON.parse(JSON.stringify(BASE_WORKFLOW));
 
-                // INCCOGITO MODE: Replace SaveImage with PreviewImage
-                if (settings.incognito) {
-                    // Remove SaveImage (Node 79)
-                    delete workflow["79"];
-                    // Add PreviewImage
-                    // We need to find a unique ID for it, "79" is fine to repurpose or use "preview_output"
-                    workflow["79"] = JSON.parse(JSON.stringify(PREVIEW_IMAGE_NODE));
-                    workflow["79"].inputs.images = ["8", 0];
-                }
-
-                const requiredNodes = ["3", "8", "38", "39", "66", "100", "102", "109", "110", "113", "114", "118", "129"];
-                // Add SaveImage only if NOT incognito (since we swapped it)
-                if (!settings.incognito) requiredNodes.push("79");
+                // INCOGNITO MODE: Keep SaveImage - files save to output folder, then we encrypt and delete the original
+                const requiredNodes = ["3", "8", "38", "39", "66", "79", "100", "102", "109", "110", "113", "114", "118", "129"];
 
                 const missingNode = validateWorkflow(workflow, requiredNodes);
                 if (missingNode) throw new Error(`Invalid Edit Workflow: Missing node ${missingNode}.`);
@@ -1360,17 +1342,8 @@ export default function App() {
                 setStatusMessage("Queued...");
                 workflow = JSON.parse(JSON.stringify(GENERATE_WORKFLOW));
 
-                // INCCOGITO MODE: Replace SaveImage with PreviewImage
-                if (settings.incognito) {
-                    // Remove SaveImage (Node 9)
-                    delete workflow["9"];
-                    // Add PreviewImage as Node 9
-                    workflow["9"] = JSON.parse(JSON.stringify(PREVIEW_IMAGE_NODE));
-                    workflow["9"].inputs.images = ["8", 0];
-                }
-
-                const requiredNodes = ["3", "6", "7", "8", "13", "16", "17", "18"];
-                if (!settings.incognito) requiredNodes.push("9");
+                // INCOGNITO MODE: Keep SaveImage - files save to output folder, then we encrypt and delete the original
+                const requiredNodes = ["3", "6", "7", "8", "9", "13", "16", "17", "18"];
 
                 const missingNode = validateWorkflow(workflow, requiredNodes);
                 if (missingNode) throw new Error(`Invalid Generate Workflow: Missing node ${missingNode}.`);
@@ -1604,11 +1577,7 @@ export default function App() {
                     delete workflow["83"];
                 }
 
-                // INCOGNITO VIDEO: Force save to temp
-                if (settings.incognito) {
-                    if (workflow["63"]) workflow["63"].inputs.save_output = false;
-                    if (workflow["82"] && extendVideo) workflow["82"].inputs.save_output = false;
-                }
+                // INCOGNITO VIDEO: Keep save_output=true - files save to output folder, then we encrypt and delete the original
             }
 
             // 4. Queue Loop
@@ -1705,18 +1674,18 @@ export default function App() {
 
                 // DEBUG: Log encryption pre-conditions
                 console.log("=== INCOGNITO CHECK ===");
-                console.log("settings.incognito:", settings.incognito);
+                console.log("incognitoRef.current:", incognitoRef.current);
                 console.log("imgInfo:", imgInfo);
                 console.log("imageUrl:", imageUrl);
 
-                // INCOGNITO ENCRYPTION FLOW
-                if (settings.incognito) {
+                // INCOGNITO ENCRYPTION FLOW (use ref to avoid stale closure)
+                if (incognitoRef.current) {
                     console.log(">>> ENTERING INCOGNITO ENCRYPTION BLOCK <<<");
                     try {
-                        // 1. Fetch raw blob (from temp/preview)
+                        // 1. Fetch raw blob from output folder
                         console.log("Step 1: Fetching file from:", imageUrl);
                         const res = await fetch(imageUrl);
-                        if (!res.ok) throw new Error(`Failed to fetch temp file: ${res.statusText}`);
+                        if (!res.ok) throw new Error(`Failed to fetch file: ${res.statusText}`);
                         const blob = await res.blob();
                         console.log("Step 1 Complete: Blob fetched, size:", blob.size, "type:", blob.type);
 
@@ -1729,7 +1698,7 @@ export default function App() {
                         const encryptedFile = await DeviceEncryption.encryptFile(fileToEncrypt);
                         console.log("Step 2 Complete: Encrypted file:", encryptedFile.name, encryptedFile.size);
 
-                        // 3. Upload encrypted file to OUTPUT
+                        // 3. Upload encrypted file to OUTPUT folder
                         console.log("Step 3: Uploading encrypted file to output folder...");
                         const encFilename = await uploadImage(encryptedFile, settings.serverAddress, true, 'output');
                         console.log("Step 3 Complete: Uploaded as:", encFilename);
@@ -1740,16 +1709,16 @@ export default function App() {
                         finalType = 'output';
                         console.log("Step 4 Complete: Display URL set to blob, finalFilename:", finalFilename);
 
-                        // 5. Cleanup: Mark the original unencrypted temp file for deletion
+                        // 5. Cleanup: Mark the original unencrypted OUTPUT file for deletion
                         if (imgInfo.filename) {
-                            console.log("Step 5: Marking temp file for deletion:", imgInfo.filename, "type:", imgInfo.type);
-                            tempFilesToDelete.current.set(imgInfo.filename, imgInfo.type || 'temp');
+                            console.log("Step 5: Marking unencrypted file for deletion:", imgInfo.filename, "type:", imgInfo.type);
+                            tempFilesToDelete.current.set(imgInfo.filename, imgInfo.type || 'output');
 
                             // Also mark the PNG thumbnail that WAN generates alongside video files
                             if (imgInfo.filename.match(/\.(mp4|webm|mov)$/i)) {
                                 const thumbnailFilename = imgInfo.filename.replace(/\.(mp4|webm|mov)$/i, '.png');
                                 console.log("Step 5b: Also marking thumbnail for deletion:", thumbnailFilename);
-                                tempFilesToDelete.current.set(thumbnailFilename, imgInfo.type || 'temp');
+                                tempFilesToDelete.current.set(thumbnailFilename, imgInfo.type || 'output');
                             }
                         }
                         console.log(">>> INCOGNITO ENCRYPTION COMPLETE <<<");
@@ -1911,17 +1880,9 @@ export default function App() {
                 ) : (
                     <main className="p-4 space-y-6 pb-24">
 
-                        {/* EDIT MODE: Model & Images */}
+                        {/* EDIT MODE: Images */}
                         {view === 'edit' && (
                             <>
-                                {/* Model Selection */}
-                                <ModelSelector
-                                    selectedModel={selectedModel}
-                                    setSelectedModel={setSelectedModel}
-                                    availableModels={availableModels}
-                                    theme={settings.theme}
-                                />
-
                                 {/* Image Inputs */}
                                 <div className="grid grid-cols-3 gap-3">
                                     {images.map((img, idx) => (
