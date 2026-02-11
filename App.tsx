@@ -120,6 +120,7 @@ export default function App() {
     // Refs
     const currentPromptIdRef = useRef<string | null>(null);
     const executingPromptRef = useRef<string>("");
+    const lastExecutedPromptRef = useRef<string | null>(null); // Track last prompt to detect changes for VRAM optimization
     const executingSeedRef = useRef<number>(0);
     const executingInputFilenameRef = useRef<string | undefined>(undefined); // Track input image for history comparison
     const executionPhaseRef = useRef<number>(0);
@@ -1183,6 +1184,17 @@ export default function App() {
             setSeed(currentSeed);
         }
         currentPrompt = prompt;
+
+        // If prompt changed since last generation, clear VRAM first to avoid costly model swap cascade
+        if (lastExecutedPromptRef.current !== null && lastExecutedPromptRef.current !== currentPrompt) {
+            console.log("Prompt changed — clearing VRAM to avoid model swap overhead");
+            try {
+                await freeMemory(settings.serverAddress);
+            } catch (e) {
+                console.warn("Failed to clear VRAM before generation:", e);
+            }
+        }
+        lastExecutedPromptRef.current = currentPrompt;
 
         // Update refs for tracking
         executingPromptRef.current = currentPrompt;
