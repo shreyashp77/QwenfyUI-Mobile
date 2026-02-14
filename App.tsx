@@ -19,7 +19,7 @@ import GenerationBottomBar from './components/GenerationBottomBar';
 import PinOverlay from './components/PinOverlay';
 import GalleryPasswordDialog from './components/GalleryPasswordDialog';
 import PrivateGallery from './components/PrivateGallery';
-import { hashPasswordWithSalt, verifyPassword, encryptWithPassword } from './utils/passwordCrypto';
+import { hashPasswordWithSalt, encryptWithPassword } from './utils/passwordCrypto';
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
@@ -58,7 +58,7 @@ export default function App() {
     const [showGalleryPasswordDialog, setShowGalleryPasswordDialog] = useState(false);
     const [galleryPasswordMode, setGalleryPasswordMode] = useState<'setup' | 'unlock'>('unlock');
     const [galleryPassword, setGalleryPassword] = useState<string | null>(null); // In-memory password
-    const [galleryConfig, setGalleryConfig] = useState<{ hash: string; salt: string } | null>(null);
+    const [galleryConfig, setGalleryConfig] = useState<boolean>(false);
     const [galleryError, setGalleryError] = useState<string | null>(null);
 
     // Model (always use default)
@@ -1889,11 +1889,7 @@ export default function App() {
         try {
             const res = await authenticatedFetch('/api/gallery/config');
             const data = await res.json();
-            if (data.success && data.config) {
-                setGalleryConfig(data.config);
-            } else {
-                setGalleryConfig(null);
-            }
+            setGalleryConfig(data.success && data.isConfigured === true);
         } catch (e) {
             console.error('Failed to load gallery config:', e);
         }
@@ -1928,7 +1924,7 @@ export default function App() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    setGalleryConfig({ hash, salt });
+                    setGalleryConfig(true);
                     setGalleryPassword(password);
                     setShowGalleryPasswordDialog(false);
                     setShowGallery(true);
@@ -1942,16 +1938,26 @@ export default function App() {
             }
             return false;
         } else {
-            // Verify existing password
-            if (!galleryConfig) return false;
-            const isValid = await verifyPassword(password, galleryConfig.hash, galleryConfig.salt);
-            if (isValid) {
-                setGalleryPassword(password);
-                setShowGalleryPasswordDialog(false);
-                setShowGallery(true);
-                return true;
-            } else {
-                setGalleryError('Incorrect password');
+            // Verify existing password via server-side check
+            try {
+                const verifyRes = await authenticatedFetch('/api/gallery/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const verifyData = await verifyRes.json();
+                if (verifyData.success && verifyData.valid) {
+                    setGalleryPassword(password);
+                    setShowGalleryPasswordDialog(false);
+                    setShowGallery(true);
+                    return true;
+                } else {
+                    setGalleryError('Incorrect password');
+                    return false;
+                }
+            } catch (e) {
+                console.error('Failed to verify gallery password:', e);
+                setGalleryError('Failed to verify password');
                 return false;
             }
         }

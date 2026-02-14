@@ -203,14 +203,9 @@ export default defineConfig(({ mode }) => {
 
             if (req.method === 'GET') {
               try {
-                if (fs.existsSync(configPath)) {
-                  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-                  res.statusCode = 200;
-                  res.end(JSON.stringify({ success: true, config }));
-                } else {
-                  res.statusCode = 200;
-                  res.end(JSON.stringify({ success: true, config: null }));
-                }
+                const isConfigured = fs.existsSync(configPath);
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, isConfigured }));
               } catch (error) {
                 console.error('[Gallery Config] Error reading config:', error);
                 res.statusCode = 500;
@@ -234,6 +229,55 @@ export default defineConfig(({ mode }) => {
                   res.end(JSON.stringify({ success: true }));
                 } catch (error) {
                   console.error('[Gallery Config] Error saving config:', error);
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ success: false, error: String(error) }));
+                }
+              });
+            } else {
+              next();
+            }
+          });
+
+          // POST verify gallery password (server-side check — hash never leaves server)
+          server.middlewares.use('/api/gallery/verify', async (req, res, next) => {
+            if (req.method === 'POST') {
+              let body = '';
+              req.on('data', chunk => { body += chunk.toString(); });
+              req.on('end', async () => {
+                try {
+                  const fs = await import('fs');
+                  const path = await import('path');
+                  const nodeCrypto = await import('crypto');
+
+                  const { password } = JSON.parse(body);
+                  if (!password) {
+                    res.statusCode = 400;
+                    res.end(JSON.stringify({ success: false, error: 'Password required' }));
+                    return;
+                  }
+
+                  const galleryDir = path.resolve(process.cwd(), '../ComfyUI/qwenfy');
+                  const configPath = path.join(galleryDir, '.gallery_config');
+
+                  if (!fs.existsSync(configPath)) {
+                    res.statusCode = 404;
+                    res.end(JSON.stringify({ success: false, error: 'No gallery config found' }));
+                    return;
+                  }
+
+                  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+                  const { hash: storedHash, salt: storedSalt } = config;
+
+                  // Replicate the client-side SHA-256(password + salt) verification
+                  const saltBytes = Buffer.from(storedSalt, 'base64');
+                  const combined = Buffer.concat([Buffer.from(password, 'utf-8'), saltBytes]);
+                  const computedHash = nodeCrypto.createHash('sha256').update(combined).digest('hex');
+
+                  const valid = computedHash === storedHash;
+                  res.statusCode = 200;
+                  res.end(JSON.stringify({ success: true, valid }));
+                } catch (error) {
+                  console.error('[Gallery Verify] Error:', error);
                   res.statusCode = 500;
                   res.end(JSON.stringify({ success: false, error: String(error) }));
                 }
