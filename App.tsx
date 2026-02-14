@@ -1185,8 +1185,8 @@ export default function App() {
         }
         currentPrompt = prompt;
 
-        // If prompt changed since last generation, clear VRAM first to avoid costly model swap cascade
-        if (lastExecutedPromptRef.current !== null && lastExecutedPromptRef.current !== currentPrompt) {
+        // If prompt changed since last video generation, clear VRAM first to avoid costly model swap cascade
+        if (view === 'video' && lastExecutedPromptRef.current !== null && lastExecutedPromptRef.current !== currentPrompt) {
             console.log("Prompt changed — clearing VRAM to avoid model swap overhead");
             try {
                 await freeMemory(settings.serverAddress);
