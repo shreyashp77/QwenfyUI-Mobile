@@ -224,42 +224,32 @@ export const loadFavouritesFromServer = async (serverAddress: string): Promise<s
 // PIN Security
 const PIN_FILE = "qwen_pin.json";
 
-export const savePinHash = async (hash: string | null, serverAddress: string): Promise<void> => {
+export const savePinHash = async (data: { hash: string; salt: string } | null, serverAddress: string): Promise<void> => {
     try {
-        if (!hash) {
-            // If null, we want to delete key features, but since we can't easily DELETE,
-            // we'll save an empty object or a special marker, OR just save null/empty string.
-            // But wait, the API probably just writes what we give it.
-            // If we want to "remove" the PIN, let's write an empty file or specific "disabled" state.
-            // Actually, writing "null" string or valid JSON null is fine.
-            await fetch(`${serverAddress}/userdata/${PIN_FILE}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hash: null })
-            });
-        } else {
-            await fetch(`${serverAddress}/userdata/${PIN_FILE}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hash })
-            });
-        }
+        await fetch(`${serverAddress}/userdata/${PIN_FILE}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data ? { hash: data.hash, salt: data.salt } : { hash: null, salt: null })
+        });
     } catch (e) {
         console.error("Error saving PIN to server", e);
         throw e;
     }
 };
 
-export const loadPinHash = async (serverAddress: string): Promise<string | null> => {
+export const loadPinHash = async (serverAddress: string): Promise<{ hash: string; salt: string } | null> => {
     try {
         // Add timestamp to prevent caching the lock state
         const response = await fetch(`${serverAddress}/userdata/${PIN_FILE}?t=${Date.now()}`);
         if (response.status === 404) return null;
         if (!response.ok) return null;
         const data = await response.json();
-        return data.hash || null;
+        if (!data.hash) return null;
+        // Return hash + salt. Old PIN files may not have a salt (legacy migration).
+        return { hash: data.hash, salt: data.salt || '' };
     } catch (e) {
         // If file doesn't exist or error, assume no PIN
         return null;
     }
 };
+

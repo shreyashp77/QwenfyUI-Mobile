@@ -23,7 +23,7 @@ import { hashPasswordWithSalt, verifyPassword, encryptWithPassword } from './uti
 // Hooks & Utils
 import { useAppSettings } from './hooks/useAppSettings';
 import { generateClientId } from './utils/idUtils';
-import { hashPin } from './utils/cryptoUtils';
+import { verifyPin, hashPin, hashPinWithSalt } from './utils/cryptoUtils';
 import { stripImageMetadata } from './utils/imageUtils'; // NEW
 import { DeviceEncryption } from './utils/cryptoUtils'; // NEW
 // Import heic2any for HEIF conversion
@@ -50,7 +50,7 @@ export default function App() {
 
     // PIN State
     const [isLocked, setIsLocked] = useState(false);
-    const [serverPinHash, setServerPinHash] = useState<string | null>(null);
+    const [serverPinHash, setServerPinHash] = useState<{ hash: string; salt: string } | null>(null);
 
     // Gallery State (Easter Egg only)
     const [showGallery, setShowGallery] = useState(false);
@@ -171,9 +171,9 @@ export default function App() {
             setIsConnected(connected);
             if (connected) {
                 // PIN Check
-                const pinHash = await loadPinHash(settings.serverAddress);
-                if (pinHash) {
-                    setServerPinHash(pinHash);
+                const pinData = await loadPinHash(settings.serverAddress);
+                if (pinData) {
+                    setServerPinHash(pinData);
                     setIsLocked(true);
                 } else {
                     setServerPinHash(null);
@@ -1839,8 +1839,30 @@ export default function App() {
     // PIN Handlers
     const handleUnlock = async (pin: string): Promise<boolean> => {
         if (!serverPinHash) return false;
-        const hashed = await hashPin(pin);
-        if (hashed === serverPinHash) {
+
+        // If salt is present, use PBKDF2 verification
+        if (serverPinHash.salt) {
+            const ok = await verifyPin(pin, serverPinHash.hash, serverPinHash.salt);
+            if (ok) {
+                setIsLocked(false);
+                return true;
+            }
+            return false;
+        }
+
+        // Legacy migration: old PIN without salt — verify with old SHA-256,
+        // then auto-upgrade to PBKDF2 on successful unlock
+        const legacyHash = await hashPin(pin);
+        if (legacyHash === serverPinHash.hash) {
+            // Upgrade to PBKDF2
+            try {
+                const { hash, salt } = await hashPinWithSalt(pin);
+                const { savePinHash: savePinFn } = await import('./services/comfyService');
+                await savePinFn({ hash, salt }, settings.serverAddress);
+                setServerPinHash({ hash, salt });
+            } catch (e) {
+                console.warn('Failed to upgrade legacy PIN hash:', e);
+            }
             setIsLocked(false);
             return true;
         }
@@ -1849,8 +1871,8 @@ export default function App() {
 
     // Callback for when PIN changes in Settings
     const handleRefreshPin = async () => {
-        const pinHash = await loadPinHash(settings.serverAddress);
-        setServerPinHash(pinHash || null);
+        const pinData = await loadPinHash(settings.serverAddress);
+        setServerPinHash(pinData || null);
     };
 
     // ========== GALLERY HANDLERS ==========

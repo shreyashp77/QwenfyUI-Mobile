@@ -196,6 +196,7 @@ export class DeviceEncryption {
 }
 
 export const hashPin = async (pin: string): Promise<string> => {
+    // DEPRECATED: Legacy unsalted SHA-256 hash. Kept only for migration checks.
     const encoder = new TextEncoder();
     const data = encoder.encode(pin);
     const hash = await crypto.subtle.digest('SHA-256', data);
@@ -203,3 +204,62 @@ export const hashPin = async (pin: string): Promise<string> => {
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 };
+
+// --- Secure PIN Hashing (PBKDF2) ---
+
+const PIN_PBKDF2_ITERATIONS = 100000;
+const PIN_SALT_LENGTH = 16;
+
+/**
+ * Hash a PIN with PBKDF2 and a random salt.
+ * Returns both the hex hash and base64-encoded salt for storage.
+ */
+export const hashPinWithSalt = async (pin: string, existingSalt?: string): Promise<{ hash: string; salt: string }> => {
+    const encoder = new TextEncoder();
+
+    // Use existing salt or generate a new random one
+    let salt: Uint8Array;
+    if (existingSalt) {
+        salt = Uint8Array.from(atob(existingSalt), c => c.charCodeAt(0));
+    } else {
+        salt = crypto.getRandomValues(new Uint8Array(PIN_SALT_LENGTH));
+    }
+
+    // Import PIN as a PBKDF2 key
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(pin),
+        'PBKDF2',
+        false,
+        ['deriveBits']
+    );
+
+    // Derive 256 bits using PBKDF2
+    const derivedBits = await crypto.subtle.deriveBits(
+        {
+            name: 'PBKDF2',
+            salt: salt.buffer as ArrayBuffer,
+            iterations: PIN_PBKDF2_ITERATIONS,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        256
+    );
+
+    const hash = Array.from(new Uint8Array(derivedBits))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+
+    const saltBase64 = btoa(String.fromCharCode(...salt));
+
+    return { hash, salt: saltBase64 };
+};
+
+/**
+ * Verify a PIN against a stored hash and salt.
+ */
+export const verifyPin = async (pin: string, storedHash: string, storedSalt: string): Promise<boolean> => {
+    const { hash } = await hashPinWithSalt(pin, storedSalt);
+    return hash === storedHash;
+};
+

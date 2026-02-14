@@ -4,7 +4,7 @@ import { AppSettings, ThemeColor } from '../types';
 import { haptic } from '../services/hapticService';
 import { sound } from '../services/soundService';
 import PinOverlay from './PinOverlay';
-import { hashPin } from '../utils/cryptoUtils';
+import { hashPinWithSalt } from '../utils/cryptoUtils';
 import { savePinHash } from '../services/comfyService';
 
 const THEME_OPTIONS: ThemeColor[] = [
@@ -55,8 +55,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     const handleSetPin = async (pin: string): Promise<boolean> => {
         try {
-            const hash = await hashPin(pin);
-            await savePinHash(hash, settings.serverAddress);
+            const { hash, salt } = await hashPinWithSalt(pin);
+            await savePinHash({ hash, salt }, settings.serverAddress);
             haptic.trigger('success');
             onUpdatePin();
             setShowPinSetup(false);
