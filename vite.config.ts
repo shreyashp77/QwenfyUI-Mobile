@@ -14,6 +14,13 @@ export default defineConfig(({ mode }) => {
   const apiToken = crypto.randomUUID();
   console.log(`[Security] API token generated for this session.`);
 
+  // Secure path traversal check helper
+  const isSafePath = (baseDir: string, targetPath: string, pathModule: typeof import('path')): boolean => {
+    const resolvedBase = pathModule.resolve(baseDir) + pathModule.sep;
+    const resolvedTarget = pathModule.resolve(targetPath);
+    return resolvedTarget.startsWith(resolvedBase);
+  };
+
   return {
     define: {
       '__API_TOKEN__': JSON.stringify(apiToken)
@@ -102,7 +109,7 @@ export default defineConfig(({ mode }) => {
                   const filePath = path.join(outputDir, filename);
 
                   // Security check: Ensure the resolved path is still within the output directory
-                  if (!filePath.startsWith(outputDir)) {
+                  if (!isSafePath(outputDir, filePath, path)) {
                     res.statusCode = 403;
                     res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
                     return;
@@ -151,13 +158,9 @@ export default defineConfig(({ mode }) => {
                   const inputDir = path.resolve(process.cwd(), '../ComfyUI/input');
                   const filePath = path.join(inputDir, filename);
 
-                  console.log(`[Delete Input Image] Request for: ${filename}`);
-                  console.log(`[Delete Input Image] CWD: ${process.cwd()}`);
-                  console.log(`[Delete Input Image] Resolved Input Dir: ${inputDir}`);
-                  console.log(`[Delete Input Image] Target Path: ${filePath}`);
 
                   // Security check: Ensure the resolved path is still within the input directory
-                  if (!filePath.startsWith(inputDir)) {
+                  if (!isSafePath(inputDir, filePath, path)) {
                     res.statusCode = 403;
                     res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
                     return;
@@ -165,13 +168,12 @@ export default defineConfig(({ mode }) => {
 
                   if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
-                    console.log(`[Delete Input Image] Deleted file: ${filePath}`);
+                    console.log(`[Delete Input Image] Deleted file: ${filename}`);
                     res.statusCode = 200;
-                    res.end(JSON.stringify({ success: true, debug: { inputDir, filePath, deleted: true } }));
+                    res.end(JSON.stringify({ success: true }));
                   } else {
-                    console.log(`[Delete Input Image] File not found: ${filePath}`);
                     res.statusCode = 200;
-                    res.end(JSON.stringify({ success: true, message: 'File not found, but treated as success', debug: { inputDir, filePath, exists: false } }));
+                    res.end(JSON.stringify({ success: true, message: 'File not found, but treated as success' }));
                   }
                 } catch (error) {
                   console.error('[Delete Input Image] Error:', error);
@@ -353,7 +355,7 @@ export default defineConfig(({ mode }) => {
                 const filePath = path.join(galleryDir, filename);
 
                 // Security check
-                if (!filePath.startsWith(galleryDir)) {
+                if (!isSafePath(galleryDir, filePath, path)) {
                   res.statusCode = 403;
                   res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
                   return;
@@ -400,7 +402,7 @@ export default defineConfig(({ mode }) => {
                   const filePath = path.join(galleryDir, filename);
 
                   // Security check
-                  if (!filePath.startsWith(galleryDir)) {
+                  if (!isSafePath(galleryDir, filePath, path)) {
                     res.statusCode = 403;
                     res.end(JSON.stringify({ success: false, error: 'Invalid file path' }));
                     return;
