@@ -1,10 +1,60 @@
 
 const ALGORITHM = 'AES-GCM';
-const KEY_STORAGE_NAME = 'incognito_device_key';
+
+// IndexedDB constants for secure key storage
+const DB_NAME = 'incognito_keys_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'keys';
+const KEY_ID = 'device_key';
+
+// Legacy localStorage key name (for migration only)
+const LEGACY_KEY_STORAGE = 'incognito_device_key';
 
 export class DeviceEncryption {
     private static key: CryptoKey | null = null;
     private static initializationPromise: Promise<void> | null = null;
+
+    // --- IndexedDB Helpers ---
+
+    private static openDB(): Promise<IDBDatabase> {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    private static async loadKeyFromDB(): Promise<CryptoKey | null> {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.get(KEY_ID);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+            tx.oncomplete = () => db.close();
+        });
+    }
+
+    private static async saveKeyToDB(key: CryptoKey): Promise<void> {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.put(key, KEY_ID);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+            tx.oncomplete = () => db.close();
+        });
+    }
+
+    // --- Init ---
 
     static async init() {
         if (this.initializationPromise) return this.initializationPromise;
@@ -13,26 +63,48 @@ export class DeviceEncryption {
             if (!window.crypto || !window.crypto.subtle) {
                 throw new Error("Incognito encryption requires a secure context (HTTPS or localhost). Client-side encryption is unavailable.");
             }
-            const storedKey = localStorage.getItem(KEY_STORAGE_NAME);
-            if (storedKey) {
+
+            // 1. Try loading from IndexedDB (secure storage)
+            try {
+                const dbKey = await this.loadKeyFromDB();
+                if (dbKey) {
+                    this.key = dbKey;
+                    console.log("Encryption key loaded from IndexedDB.");
+                    return;
+                }
+            } catch (e) {
+                console.warn("Failed to load key from IndexedDB:", e);
+            }
+
+            // 2. Migration: check for legacy localStorage key
+            const legacyJwk = localStorage.getItem(LEGACY_KEY_STORAGE);
+            if (legacyJwk) {
                 try {
-                    const jwk = JSON.parse(storedKey);
+                    const jwk = JSON.parse(legacyJwk);
+                    // Re-import with extractable: false so the key material becomes opaque
                     this.key = await window.crypto.subtle.importKey(
                         "jwk",
                         jwk,
                         ALGORITHM,
-                        true,
+                        false, // non-extractable
                         ["encrypt", "decrypt"]
                     );
-                    console.log("Encryption key loaded from local storage.");
+                    // Persist to IndexedDB
+                    await this.saveKeyToDB(this.key);
+                    // Remove the insecure localStorage copy
+                    localStorage.removeItem(LEGACY_KEY_STORAGE);
+                    console.log("Encryption key migrated from localStorage to IndexedDB (non-extractable).");
+                    return;
                 } catch (e) {
-                    console.error("Failed to load encryption key, generating new one:", e);
-                    await this.generateAndStoreKey();
+                    console.error("Failed to migrate legacy encryption key, generating new one:", e);
+                    // Remove broken legacy key
+                    localStorage.removeItem(LEGACY_KEY_STORAGE);
                 }
-            } else {
-                console.log("No encryption key found, generating new one.");
-                await this.generateAndStoreKey();
             }
+
+            // 3. No key found anywhere — generate a new one
+            console.log("No encryption key found, generating new one.");
+            await this.generateAndStoreKey();
         })();
 
         return this.initializationPromise;
@@ -44,12 +116,11 @@ export class DeviceEncryption {
                 name: ALGORITHM,
                 length: 256
             },
-            true,
+            false, // non-extractable — key material cannot be read by JavaScript
             ["encrypt", "decrypt"]
         );
 
-        const jwk = await window.crypto.subtle.exportKey("jwk", this.key);
-        localStorage.setItem(KEY_STORAGE_NAME, JSON.stringify(jwk));
+        await this.saveKeyToDB(this.key);
     }
 
     static async encryptFile(file: File | Blob): Promise<File> {
@@ -74,16 +145,14 @@ export class DeviceEncryption {
         finalBuffer.set(new Uint8Array(encryptedContent), iv.length);
 
         // Create new File with .enc extension and timestamp for uniqueness
+        // e.g., "wan22_00001.mp4" -> "wan22_00001_1736451234567.mp4.enc"
         const originalName = (file as File).name || 'encrypted_content';
         const timestamp = Date.now();
 
-        // Insert timestamp before .enc extension for unique filenames
-        // e.g., "wan22_00001.mp4" -> "wan22_00001_1736451234567.mp4.enc"
         let newName: string;
         if (originalName.endsWith('.enc')) {
             newName = originalName;
         } else {
-            // Insert timestamp before extension: filename_timestamp.ext.enc
             const lastDotIndex = originalName.lastIndexOf('.');
             if (lastDotIndex > 0) {
                 const baseName = originalName.substring(0, lastDotIndex);
