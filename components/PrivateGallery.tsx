@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Trash2, Lock, Image as ImageIcon, Film, ArrowUpRight, Monitor } from 'lucide-react';
 import { decryptWithPassword, getOriginalExtension, getMimeType } from '../utils/passwordCrypto';
+import { authenticatedFetch } from '../utils/apiUtils';
 
 interface GalleryFile {
     filename: string;
@@ -58,7 +59,7 @@ export default function PrivateGallery({
     const loadFiles = async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/gallery/list');
+            const res = await authenticatedFetch('/api/gallery/list');
             const data = await res.json();
             if (data.success) {
                 setFiles(data.files || []);
@@ -89,7 +90,7 @@ export default function PrivateGallery({
 
         try {
             // Fetch encrypted file
-            const res = await fetch(`/api/gallery/file?filename=${encodeURIComponent(filename)}`);
+            const res = await authenticatedFetch(`/api/gallery/file?filename=${encodeURIComponent(filename)}`);
             if (!res.ok) throw new Error('Failed to fetch file');
 
             const encryptedBlob = await res.blob();
@@ -167,7 +168,7 @@ export default function PrivateGallery({
         if (!confirm('Delete this item from gallery?')) return;
 
         try {
-            const res = await fetch('/api/gallery/delete', {
+            const res = await authenticatedFetch('/api/gallery/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename })
@@ -198,7 +199,7 @@ export default function PrivateGallery({
         if (!confirm('WARNING: Are you sure you want to delete ALL items from the gallery?\n\nThis action cannot be undone.')) return;
 
         try {
-            const res = await fetch('/api/gallery/delete-all', { method: 'POST' });
+            const res = await authenticatedFetch('/api/gallery/delete-all', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 // Revoke all URLs

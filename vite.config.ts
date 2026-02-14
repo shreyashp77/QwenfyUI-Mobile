@@ -3,14 +3,44 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
+import crypto from 'crypto'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+
+  // Generate a random API token for this server session.
+  // This is injected into the client and required on all /api/* requests.
+  const apiToken = crypto.randomUUID();
+  console.log(`[Security] API token generated for this session.`);
+
   return {
+    define: {
+      '__API_TOKEN__': JSON.stringify(apiToken)
+    },
     plugins: [
       react(),
       basicSsl(),
+      {
+        name: 'api-auth-middleware',
+        configureServer(server) {
+          // Auth middleware: validate token on all custom /api/* routes
+          server.middlewares.use((req, res, next) => {
+            const url = req.url || '';
+            // Only protect custom /api/* endpoints (not the /api/comfy proxy or /ws)
+            if (url.startsWith('/api/') && !url.startsWith('/api/comfy')) {
+              const authHeader = req.headers['authorization'];
+              if (authHeader !== `Bearer ${apiToken}`) {
+                res.statusCode = 401;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: false, error: 'Unauthorized' }));
+                return;
+              }
+            }
+            next();
+          });
+        }
+      },
       {
         name: 'clear-output-plugin',
         configureServer(server) {

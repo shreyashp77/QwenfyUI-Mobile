@@ -26,6 +26,7 @@ import { generateClientId } from './utils/idUtils';
 import { verifyPin, hashPin, hashPinWithSalt } from './utils/cryptoUtils';
 import { stripImageMetadata } from './utils/imageUtils'; // NEW
 import { DeviceEncryption } from './utils/cryptoUtils'; // NEW
+import { authenticatedFetch } from './utils/apiUtils';
 // Import heic2any for HEIF conversion
 import heic2any from 'heic2any';
 import { haptic } from './services/hapticService';
@@ -970,7 +971,7 @@ export default function App() {
 
             // 2. Clear Output Images
             try {
-                const response = await fetch('/api/clear-output', { method: 'POST' });
+                const response = await authenticatedFetch('/api/clear-output', { method: 'POST' });
                 const data = await response.json();
                 if (!data.success) {
                     throw new Error(data.error || "Unknown error");
@@ -999,7 +1000,7 @@ export default function App() {
     const handleDeleteImage = async (filename: string) => {
         if (confirm("Are you sure you want to delete this image? This cannot be undone.")) {
             try {
-                const response = await fetch('/api/delete-image', {
+                const response = await authenticatedFetch('/api/delete-image', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename })
@@ -1014,7 +1015,7 @@ export default function App() {
                     if (filename.match(/\.(mp4|webm|mov)$/i)) {
                         const thumbFilename = filename.replace(/\.(mp4|webm|mov)$/i, ".png");
                         try {
-                            await fetch('/api/delete-image', {
+                            await authenticatedFetch('/api/delete-image', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ filename: thumbFilename })
@@ -1042,7 +1043,7 @@ export default function App() {
 
     const handleDeleteInputImage = async (filename: string) => {
         try {
-            const res = await fetch(`/api/delete-input-image`, {
+            const res = await authenticatedFetch(`/api/delete-input-image`, {
                 method: 'POST',
                 body: JSON.stringify({ filename })
             });
@@ -1123,7 +1124,7 @@ export default function App() {
                         });
                     } else {
                         // Use the Vite dev server API for input files
-                        res = await fetch('/api/delete-input-image', {
+                        res = await authenticatedFetch('/api/delete-input-image', {
                             method: 'POST',
                             body: JSON.stringify({ filename })
                         });
@@ -1886,7 +1887,7 @@ export default function App() {
 
     const loadGalleryConfig = async () => {
         try {
-            const res = await fetch('/api/gallery/config');
+            const res = await authenticatedFetch('/api/gallery/config');
             const data = await res.json();
             if (data.success && data.config) {
                 setGalleryConfig(data.config);
@@ -1920,7 +1921,7 @@ export default function App() {
             // Create new password
             try {
                 const { hash, salt } = await hashPasswordWithSalt(password);
-                const res = await fetch('/api/gallery/config', {
+                const res = await authenticatedFetch('/api/gallery/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ hash, salt })
@@ -2004,7 +2005,7 @@ export default function App() {
             const encryptedFile = await encryptWithPassword(file, galleryPassword);
 
             // Upload to gallery
-            const uploadRes = await fetch('/api/gallery/save', {
+            const uploadRes = await authenticatedFetch('/api/gallery/save', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/octet-stream',
